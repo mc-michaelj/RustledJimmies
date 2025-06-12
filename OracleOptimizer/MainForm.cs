@@ -21,6 +21,26 @@ namespace OracleOptimizer
 
         private async void analyzeButton_Click(object? sender, EventArgs e)
         {
+            // Helper function to reliably extract the first executable SQL statement from a string
+            // that might contain comments and multiple queries.
+            Func<string, string> extractFirstQuery = (rawSql) =>
+            {
+                if (string.IsNullOrWhiteSpace(rawSql)) return string.Empty;
+                // Remove all line comments (--) from the script
+                var noComments = System.Text.RegularExpressions.Regex.Replace(rawSql, @"--.*", "");
+                // Split the remaining text into individual statements based on the semicolon
+                var statements = noComments.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                // Find and return the first non-whitespace statement
+                foreach (var stmt in statements)
+                {
+                    if (!string.IsNullOrWhiteSpace(stmt))
+                    {
+                        return stmt.Trim();
+                    }
+                }
+                return string.Empty; // Return empty if no valid statement is found
+            };
+
             // 1. Gather Inputs
             string host = hostTextBox.Text;
             string user = userTextBox.Text;
@@ -46,7 +66,7 @@ namespace OracleOptimizer
                 // 2. Instantiate Services
                 var geminiService = new GeminiService(apiKey);
                 var oracleService = new OracleService();
-                string connectionString = $"Data Source={host};User Id={user};Password={password};";
+                string connectionString = $"Data Source={host};User Id={user};Password={password};Connection Timeout=60;";
 
                 // Log connection attempt
                 System.Diagnostics.Debug.WriteLine($"Attempting to connect to database: {host}");
@@ -74,11 +94,36 @@ namespace OracleOptimizer
                 statusLabel.Text = "Gemini analysis complete. Getting 'before' snapshot...";
 
                 // 4. Get "Before" Snapshot
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                DataTable beforeData = await oracleService.ExecuteQueryAsync(connectionString, geminiResponse.ValidationQueryBefore);
-                sw.Stop();
-                long beforeTime = sw.ElapsedMilliseconds;
-                statusLabel.Text = $"'Before' snapshot complete ({beforeTime}ms). Executing in transaction...";
+                // Run the 'before' query multiple times to warm the database cache and get a more accurate timing.
+                string beforeQuery = extractFirstQuery(geminiResponse.ValidationQueryBefore);
+                if (string.IsNullOrEmpty(beforeQuery))
+                {
+                    throw new Exception("Could not find a valid 'before' validation query in the Gemini response.");
+                }
+
+                long beforeTime = long.MaxValue;
+                DataTable beforeData = new DataTable();
+                const int WARMUP_RUNS = 3;
+
+                for (int i = 0; i < WARMUP_RUNS; i++)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    // We only need to capture the data on the last run.
+                    if (i == WARMUP_RUNS - 1)
+                    {
+                        beforeData = await oracleService.ExecuteQueryAsync(connectionString, beforeQuery);
+                    }
+                    else
+                    {
+                        await oracleService.ExecuteQueryAsync(connectionString, beforeQuery);
+                    }
+                    sw.Stop();
+                    if (sw.ElapsedMilliseconds < beforeTime)
+                    {
+                        beforeTime = sw.ElapsedMilliseconds;
+                    }
+                }
+                statusLabel.Text = $"'Before' snapshot complete (Best of {WARMUP_RUNS}: {beforeTime}ms). Executing in transaction...";
 
                 // Log before data
                 System.Diagnostics.Debug.WriteLine($"Before Data: {JsonConvert.SerializeObject(beforeData)}");
@@ -92,12 +137,67 @@ namespace OracleOptimizer
                     {
                         try
                         {
-                            sw.Restart();
-                            // Execute optimized procedure
-                            await oracleService.ExecuteNonQueryAsync(connection, transaction, geminiResponse.OptimizedProcedureBody);
+                            // For the optimized DML, we only run it once as it changes the state of the database.
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            string procedureBody = geminiResponse.OptimizedProcedureBody.Trim();
+
+                            // Use regex to robustly convert a PROCEDURE into an anonymous DECLARE block.
+                            // This handles variations in whitespace (spaces, newlines, tabs) around keywords.
+                            // It replaces "PROCEDURE <name> IS/AS" with "DECLARE"
+                            var regex = new System.Text.RegularExpressions.Regex(
+                                @"\A\s*PROCEDURE\s+.*?(\s+IS|\s+AS)\s+",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+                            );
+
+                            string executableBlock = regex.Replace(procedureBody, "DECLARE\n", 1);
+
+                            // It also replaces the final "END <name>;" with "END;"
+                            // This makes the block executable.
+                            regex = new System.Text.RegularExpressions.Regex(
+                                @"END\s+.*?;",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.RightToLeft
+                            );
+                            executableBlock = regex.Replace(executableBlock, "END;", 1);
+
+                            // The optimized procedure may contain calls to local logging procedures (e.g., LogStatus, PrintOut, LogError)
+                            // that don't exist in our context. We need to remove them for the block to be valid.
+
+                            // Replace LogError with RAISE; to ensure exceptions are propagated up to the C# code.
+                            executableBlock = System.Text.RegularExpressions.Regex.Replace(
+                                executableBlock,
+                                @"LogError\(.*?\);",
+                                "RAISE;",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+                            );
+
+                            // Remove any calls to LogStatus or PrintOut by replacing them with a valid no-op statement.
+                            executableBlock = System.Text.RegularExpressions.Regex.Replace(
+                                executableBlock,
+                                @"^\s*(LogStatus|PrintOut)\(.*\);",
+                                "NULL;",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Multiline
+                            );
+
+                            await oracleService.ExecuteNonQueryAsync(connection, transaction, executableBlock);
 
                             // Execute 'after' query
-                            DataTable afterData = await oracleService.ExecuteQueryWithinTransactionAsync(connection, transaction, geminiResponse.ValidationQueryAfter);
+                            string afterQuery = extractFirstQuery(geminiResponse.ValidationQueryAfter);
+                            if (string.IsNullOrEmpty(afterQuery))
+                            {
+                                throw new Exception("Could not find a valid 'after' validation query in the Gemini response.");
+                            }
+
+                            // Gemini sometimes assumes a log_timestamp column exists for validation.
+                            // We will remove this condition as our target table may not have it.
+                            // This regex removes any AND condition that refers to "log_timestamp".
+                            afterQuery = System.Text.RegularExpressions.Regex.Replace(
+                                afterQuery,
+                                @"\s+AND\s+.*?log_timestamp.*?(?=\s+ORDER BY|\s*$)",
+                                "",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+                            );
+
+                            DataTable afterData = await oracleService.ExecuteQueryWithinTransactionAsync(connection, transaction, afterQuery);
                             sw.Stop();
                             long afterTime = sw.ElapsedMilliseconds;
 
@@ -131,6 +231,11 @@ namespace OracleOptimizer
                         }
                     }
                 }
+            }
+            catch (OracleException oraEx) when (oraEx.Message.Contains("ORA-50000"))
+            {
+                statusLabel.Text = "Error: Connection to Oracle timed out. Check firewall, VPN, and host details.";
+                File.AppendAllText("log.txt", $"Oracle Connection Error: {oraEx}\n");
             }
             catch (Exception ex)
             {

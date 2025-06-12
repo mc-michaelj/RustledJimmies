@@ -63,10 +63,10 @@ Your Response MUST be a JSON object with the following exact structure and keys:
             };
 
             var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync($"https://generativelanguage.googleapis.com/v1beta/models/{modelName}/generateContent?key={_apiKey}", content);
+            var response = await _httpClient.PostAsync($"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={_apiKey}", content);
 
             // Log the request and response details
-            System.Diagnostics.Debug.WriteLine($"Request URL: https://generativelanguage.googleapis.com/v1beta/models/{modelName}/generateContent?key={_apiKey}");
+            System.Diagnostics.Debug.WriteLine($"Request URL: https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={_apiKey}");
             System.Diagnostics.Debug.WriteLine($"Request Body: {JsonConvert.SerializeObject(requestBody)}");
             System.Diagnostics.Debug.WriteLine($"Response Status: {response.StatusCode}");
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -77,7 +77,54 @@ Your Response MUST be a JSON object with the following exact structure and keys:
                 throw new HttpRequestException($"Error calling Gemini API: {response.StatusCode}. Details: {responseContent}");
             }
 
-            return JsonConvert.DeserializeObject<GeminiResponse>(responseContent);
+            // The actual JSON content is nested inside the API response. We need to parse it out.
+            dynamic? parsedJson = JsonConvert.DeserializeObject<dynamic>(responseContent);
+            string? modelResponseText = parsedJson?.candidates[0]?.content?.parts[0]?.text?.ToString();
+
+            if (string.IsNullOrWhiteSpace(modelResponseText))
+            {
+                throw new Exception("Gemini returned an empty or invalid response body.");
+            }
+
+            // The AI may add conversational text and markdown. Find the JSON block.
+            string jsonBlock = modelResponseText;
+            string jsonMarker = "```json";
+            int startIndex = modelResponseText.IndexOf(jsonMarker);
+
+            if (startIndex != -1)
+            {
+                startIndex += jsonMarker.Length;
+                int endIndex = modelResponseText.LastIndexOf("```");
+                if (endIndex > startIndex)
+                {
+                    jsonBlock = modelResponseText.Substring(startIndex, endIndex - startIndex).Trim();
+                }
+            }
+            else
+            {
+                // Fallback to finding the first and last brace if no markdown block is found
+                int firstBrace = modelResponseText.IndexOf('{');
+                int lastBrace = modelResponseText.LastIndexOf('}');
+
+                if (firstBrace != -1 && lastBrace > firstBrace)
+                {
+                    jsonBlock = modelResponseText.Substring(firstBrace, lastBrace - firstBrace + 1);
+                }
+                else
+                {
+                    throw new Exception("Could not find a valid JSON object in the Gemini response.");
+                }
+            }
+
+            try
+            {
+                return JsonConvert.DeserializeObject<GeminiResponse>(jsonBlock);
+            }
+            catch (JsonReaderException ex)
+            {
+                // Throw a more specific exception to help with debugging
+                throw new JsonReaderException($"Failed to parse the following JSON block from Gemini: {jsonBlock}", ex);
+            }
         }
     }
 }

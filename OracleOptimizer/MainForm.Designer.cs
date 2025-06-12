@@ -109,7 +109,7 @@ namespace OracleOptimizer
             // procedureLabel
             // 
             procedureLabel.AutoSize = true;
-            procedureLabel.Location = new Point(12, 80);
+            procedureLabel.Location = new Point(12, 110);
             procedureLabel.Name = "procedureLabel";
             procedureLabel.Size = new Size(98, 15);
             procedureLabel.TabIndex = 6;
@@ -121,7 +121,7 @@ namespace OracleOptimizer
             procedureBodyTextBox.AcceptsTab = true;
             procedureBodyTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             procedureBodyTextBox.Font = new Font("Consolas", 9.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            procedureBodyTextBox.Location = new Point(12, 98);
+            procedureBodyTextBox.Location = new Point(12, 128);
             procedureBodyTextBox.Multiline = true;
             procedureBodyTextBox.Name = "procedureBodyTextBox";
             procedureBodyTextBox.ScrollBars = ScrollBars.Both;
@@ -235,7 +235,7 @@ namespace OracleOptimizer
             // geminiApiKeyLabel
             // 
             geminiApiKeyLabel.AutoSize = true;
-            geminiApiKeyLabel.Location = new Point(12, 48);
+            geminiApiKeyLabel.Location = new Point(12, 45);
             geminiApiKeyLabel.Name = "geminiApiKeyLabel";
             geminiApiKeyLabel.Size = new Size(93, 15);
             geminiApiKeyLabel.TabIndex = 11;
@@ -243,7 +243,7 @@ namespace OracleOptimizer
             // 
             // geminiApiKeyTextBox
             // 
-            geminiApiKeyTextBox.Location = new Point(111, 45);
+            geminiApiKeyTextBox.Location = new Point(111, 42);
             geminiApiKeyTextBox.Name = "geminiApiKeyTextBox";
             geminiApiKeyTextBox.PasswordChar = '*';
             geminiApiKeyTextBox.Size = new Size(400, 23);
@@ -252,18 +252,18 @@ namespace OracleOptimizer
             // geminiModelLabel
             // 
             geminiModelLabel.AutoSize = true;
-            geminiModelLabel.Location = new Point(12, 45);
+            geminiModelLabel.Location = new Point(12, 75);
             geminiModelLabel.Name = "geminiModelLabel";
-            geminiModelLabel.Size = new Size(100, 15);
-            geminiModelLabel.TabIndex = 10;
+            geminiModelLabel.Size = new Size(90, 15);
+            geminiModelLabel.TabIndex = 12;
             geminiModelLabel.Text = "Gemini Model:";
             // 
             // geminiModelTextBox
             // 
-            geminiModelTextBox.Location = new Point(120, 42);
+            geminiModelTextBox.Location = new Point(111, 72);
             geminiModelTextBox.Name = "geminiModelTextBox";
-            geminiModelTextBox.Size = new Size(250, 23);
-            geminiModelTextBox.TabIndex = 11;
+            geminiModelTextBox.Size = new Size(400, 23);
+            geminiModelTextBox.TabIndex = 13;
             geminiModelTextBox.Text = "gemini-2.5-flash-preview-05-20";
             // 
             // MainForm

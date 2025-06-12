@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("OracleOptimizer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+393e903c6c69832e58db157cfb8856d740acc901")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7588e34dd7cde5ca1d3aeb2ac5cdc3df813c905d")]
 [assembly: System.Reflection.AssemblyProductAttribute("OracleOptimizer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("OracleOptimizer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

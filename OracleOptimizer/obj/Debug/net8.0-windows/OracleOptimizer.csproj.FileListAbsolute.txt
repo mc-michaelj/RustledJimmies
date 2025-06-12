@@ -17,3 +17,7 @@ C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\obj\Debug\net8.0-windows\
 C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\obj\Debug\net8.0-windows\OracleOptimizer.pdb
 C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\obj\Debug\net8.0-windows\OracleOptimizer.genruntimeconfig.cache
 C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\obj\Debug\net8.0-windows\ref\OracleOptimizer.dll
+C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\bin\Debug\net8.0-windows\System.DirectoryServices.Protocols.dll
+C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\bin\Debug\net8.0-windows\runtimes\linux\lib\net8.0\System.DirectoryServices.Protocols.dll
+C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\bin\Debug\net8.0-windows\runtimes\osx\lib\net8.0\System.DirectoryServices.Protocols.dll
+C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\bin\Debug\net8.0-windows\runtimes\win\lib\net8.0\System.DirectoryServices.Protocols.dll
