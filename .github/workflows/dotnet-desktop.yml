@@ -1,38 +1,38 @@
-# GitHub Actions Workflow: Build .csproj and Upload .exe
+# GitHub Actions Workflow: Build .csproj and Create Release
 #
 # WHAT THIS DOES:
-# 1. Triggers automatically every time you 'git push' to your 'main' branch.
-# 2. Sets up a fresh Windows environment.
-# 3. Locates and sets up MSBuild (the tool for building Visual Studio projects).
-# 4. Restores all the necessary NuGet packages for your project.
-# 5. Builds your project in 'Release' mode.
-# 6. **NEW:** Lists all files in the build directory for debugging.
-# 7. Takes the compiled .exe file and uploads it as a downloadable 'artifact'.
+# 1. Triggers automatically when you push a new tag (e.g., "v1.0.0") to your repository.
+# 2. Sets up a fresh Windows environment and builds your project.
+# 3. Creates a new, formal GitHub Release corresponding to the tag name.
+# 4. Uploads your compiled .exe file as a permanent asset to that release.
 #
 # HOW TO USE:
-# 1. Place this file in '.github/workflows/build.yml' in your repository.
-# 2. Run the workflow.
-# 3. Check the log for the "List build output" step. This will show you exactly what
-#    files were created and where they are. You'll see either a .dll or a .exe.
-# 4. Adjust the final 'path' in the "Upload artifact" step to match the real file path.
+# 1. Place this file in '.github/workflows/release.yml' in your repository.
+# 2. When you are ready to publish a new version, create and push a tag:
+#    git tag v1.0.0
+#    git push origin v1.0.0
+# 3. The workflow will run, and the .exe will appear under the "Releases"
+#    section on your main repository page.
 
-name: Build and Release EXE
+name: Build and Create Release
 
 on:
   push:
-    branches: [ "main" ] # This workflow runs on pushes to the main branch
-  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+    tags:
+      - 'v*.*.*' # Triggers the workflow on version tags like v1.0.0, v1.2.3, etc.
 
 jobs:
-  build:
-    runs-on: windows-latest # Use a Windows virtual machine
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write # This permission is required to create a release
 
     steps:
     # Step 1: Check out your repository code so the workflow can access it
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Step 2: Set up MSBuild. This action finds the path to msbuild.exe and adds it to the PATH
+    # Step 2: Set up MSBuild.
     - name: Add msbuild to path
       uses: microsoft/setup-msbuild@v2
 
@@ -40,23 +40,14 @@ jobs:
     - name: Restore NuGet packages
       run: nuget restore OracleOptimizer/OracleOptimizer.csproj
 
-    # Step 4: Build the project. This runs MSBuild with the 'Release' configuration.
+    # Step 4: Build the project.
     - name: Build project
       run: msbuild.exe OracleOptimizer/OracleOptimizer.csproj /p:Configuration=Release
 
-    # Step 5: (DEBUGGING STEP) List all files in the output directory
-    # This will help you see exactly what was built and where it is.
-    # Look at the log for this step in your GitHub Actions run.
-    - name: List build output
-      run: Get-ChildItem -Path . -Recurse
-      shell: powershell
-
-    # Step 6: Upload the compiled .exe as an artifact
-    # The resulting .exe will be available for download on the workflow summary page.
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+    # Step 5: Create a GitHub Release and upload the .exe as an asset
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
       with:
-        name: Windows-Executable # The name of the downloadable file archive
-        # UPDATED PATH: The extra '**' searches recursively inside the Release folder.
-        # This finds the .exe even if MSBuild creates extra subdirectories (e.g., for a .NET version).
-        path: '**/bin/Release/**/*.exe'
+        # The 'files' option points to your compiled executable.
+        # This will find the .exe in the build output directory and attach it to the release.
+        files: '**/bin/Release/**/*.exe'
