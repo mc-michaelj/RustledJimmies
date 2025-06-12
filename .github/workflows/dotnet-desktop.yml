@@ -2,17 +2,17 @@
 #
 # WHAT THIS DOES:
 # 1. Triggers automatically when you push a new tag (e.g., "v1.0.0") to your repository.
-# 2. Sets up a fresh Windows environment and builds your project.
-# 3. Creates a new, formal GitHub Release corresponding to the tag name.
-# 4. Uploads your compiled .exe file as a permanent asset to that release.
+# 2. Can also be triggered manually from the "Actions" tab.
+# 3. Sets up a fresh Windows environment and builds your project.
+# 4. Creates a new, formal GitHub Release corresponding to the tag name.
+# 5. Uploads your compiled .exe file as a permanent asset to that release.
 #
 # HOW TO USE:
 # 1. Place this file in '.github/workflows/release.yml' in your repository.
-# 2. When you are ready to publish a new version, create and push a tag:
+# 2. To create a release, push a new tag:
 #    git tag v1.0.0
 #    git push origin v1.0.0
-# 3. The workflow will run, and the .exe will appear under the "Releases"
-#    section on your main repository page.
+# 3. To run manually, go to the Actions tab and click "Run workflow".
 
 name: Build and Create Release
 
@@ -20,6 +20,7 @@ on:
   push:
     tags:
       - 'v*.*.*' # Triggers the workflow on version tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
 
 jobs:
   build-and-release:
