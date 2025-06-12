@@ -6,7 +6,9 @@ using OracleOptimizer.Services;
 using System;
 using System.Data;
 using System.Diagnostics;
+using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows; // Required for MessageBox in case of unhandled errors, though direct UI interaction from VM is not ideal.
 
@@ -14,8 +16,8 @@ namespace OracleOptimizer.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
-    private IDatabaseService _databaseService;
-    private IGeminiApiService _geminiApiService;
+    private IDatabaseService? _databaseService;
+    private IGeminiApiService? _geminiApiService;
 
     // --- Observable Properties ---
     [ObservableProperty]
@@ -57,6 +59,8 @@ public partial class MainViewModel : ObservableObject
     {
         // Default constructor for XAML instantiation.
         // Services will be instantiated on demand or passed via DI if we enhance this later.
+        _databaseService = null;
+        _geminiApiService = null;
     }
 
     // Constructor for testing or if we implement DI
@@ -104,8 +108,8 @@ public partial class MainViewModel : ObservableObject
 
 
         Stopwatch stopwatch = new Stopwatch();
-        DataTable beforeData = null;
-        DataTable afterData = null;
+        DataTable? beforeData = null;
+        DataTable? afterData = null;
         TimeSpan originalSqlExecutionTime;
         TimeSpan optimizedSqlExecutionTime = TimeSpan.Zero; // Initialize
 
@@ -117,7 +121,7 @@ public partial class MainViewModel : ObservableObject
             beforeData = _databaseService.ExecuteQuery(ConnectionString, OriginalSql);
             stopwatch.Stop();
             originalSqlExecutionTime = stopwatch.Elapsed;
-            StatusBarText = $"Original SQL executed in {originalSqlExecutionTime.TotalMilliseconds} ms. Rows: {beforeData.Rows.Count}.";
+            StatusBarText = $"Original SQL executed in {originalSqlExecutionTime.TotalMilliseconds} ms. Rows: {(beforeData != null ? beforeData.Rows.Count : 0)}.";
 
             // GEMINI CALL
             StatusBarText = "Calling Gemini API for optimization...";
@@ -181,7 +185,7 @@ public partial class MainViewModel : ObservableObject
             if (geminiResponse.ValidationQueries == null || geminiResponse.ValidationQueries.Count == 0)
             {
                 StatusBarText = "Validation FAILED: Gemini did not provide validation queries.";
-                OptimizedSql = geminiResponse.OptimizedSql; // Show the optimized SQL anyway
+                OptimizedSql = geminiResponse.OptimizedSql ?? string.Empty; // Show the optimized SQL anyway
                 ValidationDetails = "Gemini API response did not include 'validation_queries'. Cannot validate output.";
                 IsSaveEnabled = false; // Cannot save if validation cannot be performed
                 return;
@@ -237,7 +241,7 @@ public partial class MainViewModel : ObservableObject
                  // This case should have been caught above, but as a fallback:
                 ValidationDetails = "Validation FAILED: No validation queries provided by Gemini.";
                 StatusBarText = "Validation FAILED. Optimized script rejected.";
-                OptimizedSql = geminiResponse.OptimizedSql; // Show it but don't enable save
+                OptimizedSql = geminiResponse.OptimizedSql ?? string.Empty; // Show it but don't enable save
                 IsSaveEnabled = false;
                 return;
             }
@@ -252,7 +256,7 @@ public partial class MainViewModel : ObservableObject
             if (areIdentical)
             {
                 StatusBarText = "Validation PASSED.";
-                OptimizedSql = geminiResponse.OptimizedSql; // Show the optimized SQL
+                OptimizedSql = geminiResponse.OptimizedSql ?? string.Empty; // Show the optimized SQL
                 IsSaveEnabled = true;
             }
             else
@@ -260,7 +264,7 @@ public partial class MainViewModel : ObservableObject
                 StatusBarText = "Validation FAILED. Optimized script has been rejected.";
                 // OptimizedSql = ""; // Clear it as per spec "Optimized script shall be rejected"
                                         // However, user might still want to see it. Let's show it but disable save.
-                OptimizedSql = geminiResponse.OptimizedSql; // Show it, but IsSaveEnabled remains false.
+                OptimizedSql = geminiResponse.OptimizedSql ?? string.Empty; // Show it, but IsSaveEnabled remains false.
                 IsSaveEnabled = false;
             }
 

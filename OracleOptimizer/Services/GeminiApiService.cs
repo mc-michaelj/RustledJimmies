@@ -83,8 +83,12 @@ public class GeminiApiService : IGeminiApiService
                         JsonElement firstPart = partsElement[0];
                         if (firstPart.TryGetProperty("text", out JsonElement textElement))
                         {
-                            string jsonText = textElement.GetString();
-                            GeminiApiResponse apiResponse = JsonSerializer.Deserialize<GeminiApiResponse>(jsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            string? jsonText = textElement.GetString();
+                            if (jsonText == null)
+                            {
+                                throw new InvalidOperationException("Extracted JSON text from Gemini API response is null.");
+                            }
+                            GeminiApiResponse? apiResponse = JsonSerializer.Deserialize<GeminiApiResponse>(jsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                             if (apiResponse == null)
                             {
                                 throw new InvalidOperationException("Failed to deserialize the Gemini API response content.");
