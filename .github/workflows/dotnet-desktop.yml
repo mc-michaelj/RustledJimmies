@@ -1,0 +1,58 @@
+# GitHub Actions Workflow: Build .sln and Upload .exe
+#
+# WHAT THIS DOES:
+# 1. Triggers automatically every time you 'git push' to your 'main' branch.
+# 2. Sets up a fresh Windows environment.
+# 3. Locates and sets up MSBuild (the tool for building Visual Studio solutions).
+# 4. Restores all the necessary NuGet packages for your project.
+# 5. Builds your solution in 'Release' mode.
+# 6. Takes the compiled .exe file and uploads it as a downloadable 'artifact'.
+#
+# HOW TO USE:
+# 1. Create a folder named '.github' in the root of your repository if it doesn't exist.
+# 2. Inside that folder, create another folder named 'workflows'.
+# 3. Create a new file inside 'workflows' and name it something like 'build.yml'.
+# 4. Copy and paste the entire content of this file into your 'build.yml'.
+# 5. **IMPORTANT:** You will need to change the placeholder 'YourSolutionName.sln'
+#    on lines 31 and 35 to the actual name of your solution file.
+# 6. **IMPORTANT:** You may need to adjust the 'path' on line 45 to point to the
+#    exact location where your .exe is created. The path provided is a common
+#    default, but your project structure might be different. A good way to find it
+#    is to build your project locally in Release mode and see where the .exe appears.
+
+name: Build and Release EXE
+
+on:
+  push:
+    branches: [ "main" ] # This workflow runs on pushes to the main branch
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+
+jobs:
+  build:
+    runs-on: windows-latest # Use a Windows virtual machine
+
+    steps:
+    # Step 1: Check out your repository code so the workflow can access it
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Step 2: Set up MSBuild. This action finds the path to msbuild.exe and adds it to the PATH
+    - name: Add msbuild to path
+      uses: microsoft/setup-msbuild@v2
+
+    # Step 3: Restore NuGet packages. This is like running 'Update-Package' in Visual Studio
+    - name: Restore NuGet packages
+      run: nuget restore YourSolutionName.sln # <-- CHANGE THIS to your .sln file name
+
+    # Step 4: Build the solution. This runs MSBuild with the 'Release' configuration.
+    - name: Build solution
+      run: msbuild.exe YourSolutionName.sln /p:Configuration=Release # <-- CHANGE THIS to your .sln file name
+
+    # Step 5: Upload the compiled .exe as an artifact
+    # The resulting .exe will be available for download on the workflow summary page.
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Windows-Executable # The name of the downloadable file archive
+        path: '**/bin/Release/*.exe' # The path to your compiled .exe. The wildcard '**' searches recursively.
+                                    # This path usually works but you may need to adjust it based on your project setup.
