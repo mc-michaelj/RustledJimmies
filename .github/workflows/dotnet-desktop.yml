@@ -42,11 +42,11 @@ jobs:
 
     # Step 3: Restore NuGet packages. This is like running 'Update-Package' in Visual Studio
     - name: Restore NuGet packages
-      run: nuget restore YourSolutionName.sln # <-- CHANGE THIS to your .sln file name
+      run: nuget restore RustledJimmies.sln # <-- CHANGE THIS to your .sln file name
 
     # Step 4: Build the solution. This runs MSBuild with the 'Release' configuration.
     - name: Build solution
-      run: msbuild.exe YourSolutionName.sln /p:Configuration=Release # <-- CHANGE THIS to your .sln file name
+      run: msbuild.exe RustledJimmies.sln /p:Configuration=Release # <-- CHANGE THIS to your .sln file name
 
     # Step 5: Upload the compiled .exe as an artifact
     # The resulting .exe will be available for download on the workflow summary page.
