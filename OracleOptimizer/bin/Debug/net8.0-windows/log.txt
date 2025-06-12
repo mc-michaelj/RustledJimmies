@@ -1,0 +1,4 @@
+Attempting to connect to database: dev5-mer-db:1521/TCTN_MASTER
+Error in analyzeButton_Click: System.Net.Http.HttpRequestException: Error calling Gemini API: NotFound. Details: 
+   at OracleOptimizer.Services.GeminiService.AnalyzeSqlAsync(String procedureBody, String modelName) in C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\Services\GeminiService.cs:line 77
+   at OracleOptimizer.MainForm.analyzeButton_Click(Object sender, EventArgs e) in C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\MainForm.cs:line 56
