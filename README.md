@@ -27,8 +27,12 @@ To use the Oracle SQL Optimizer application, follow these steps:
 1.  **Launch the Application**: Open the `OracleOptimizer.exe` application (after building it on a Windows machine with .NET 8 and WPF support).
 
 2.  **Enter Connection Details**:
-    *   **Oracle Connection String**: In the "Oracle Connection String" field, enter the full connection string for your Oracle database.
-        *   Example: `Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=your-oracle-host)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=your-service-name)));User Id=your-user;Password=your-password;`
+    *   **Oracle Connection String**: In the "Oracle Connection String" field, enter the connection string for your Oracle database.
+        *   The application supports standard Oracle connection strings. A common and simpler format to use is EZConnect (Easy Connect Naming Method).
+        *   **EZConnect Format**: `hostname:port/service_name`
+        *   Example (EZConnect): `your-oracle-host:1521/your_service_name`
+        *   Example (Traditional): `Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=your-oracle-host)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=your-service-name)));User Id=your-user;Password=your-password;`
+        *   **Note**: The application UI includes a tooltip for the connection string field reminding users of the EZConnect format.
     *   **Gemini API Key**: In the "Gemini API Key" field, enter your Google Gemini API key. This is required to communicate with the optimization service.
 
 3.  **Input Original SQL Script**:
