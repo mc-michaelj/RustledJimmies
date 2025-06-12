@@ -13,9 +13,7 @@
 # 2. Inside that folder, create another folder named 'workflows'.
 # 3. Create a new file inside 'workflows' and name it something like 'build.yml'.
 # 4. Copy and paste the entire content of this file into your 'build.yml'.
-# 5. **IMPORTANT:** You will need to change the placeholder 'YourProjectName.csproj'
-#    on lines 31 and 35 to the actual name of your project file.
-# 6. **IMPORTANT:** You may need to adjust the 'path' on line 45 to point to the
+# 5. **IMPORTANT:** You may need to adjust the 'path' on line 46 to point to the
 #    exact location where your .exe is created. The path provided is a common
 #    default, but your project structure might be different. A good way to find it
 #    is to build your project locally in Release mode and see where the .exe appears.
@@ -42,11 +40,11 @@ jobs:
 
     # Step 3: Restore NuGet packages for the project
     - name: Restore NuGet packages
-      run: nuget restore OracleOptimizer/OracleOptimizer.csproj # <-- Changed to your project path
+      run: nuget restore OracleOptimizer/OracleOptimizer.csproj
 
     # Step 4: Build the project. This runs MSBuild with the 'Release' configuration.
     - name: Build project
-      run: msbuild.exe OracleOptimizer/OracleOptimizer.csproj /p:Configuration=Release # <-- Changed to your project path
+      run: msbuild.exe OracleOptimizer/OracleOptimizer.csproj /p:Configuration=Release
 
     # Step 5: Upload the compiled .exe as an artifact
     # The resulting .exe will be available for download on the workflow summary page.
@@ -54,5 +52,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Windows-Executable # The name of the downloadable file archive
-        path: '**/bin/Release/*.exe' # The path to your compiled .exe. The wildcard '**' searches recursively.
-                                    # This path usually works but you may need to adjust it based on your project setup.
+        # UPDATED PATH: The extra '**' searches recursively inside the Release folder.
+        # This finds the .exe even if MSBuild creates extra subdirectories (e.g., for a .NET version).
+        path: '**/bin/Release/**/*.exe'
