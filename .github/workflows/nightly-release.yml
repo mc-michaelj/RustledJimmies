@@ -1,0 +1,57 @@
+name: Nightly Release
+
+on:
+  workflow_dispatch: # Allows manual triggering
+  schedule:
+    # Runs at 05:00 UTC every day
+    - cron: '0 5 * * *'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x' # Ensure this matches the project's .NET version
+
+      - name: Restore dependencies
+        run: dotnet restore ./OracleOptimizer/OracleOptimizer.csproj # Specify path to csproj
+
+      - name: Build and Publish Application
+        # This command creates a single, self-contained .exe for Windows
+        run: dotnet publish ./OracleOptimizer/OracleOptimizer.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish # Specify path to csproj
+
+      - name: Get Release Version
+        # Creates a version string like "nightly-2025.06.12"
+        id: get_version
+        run: echo "VERSION=nightly-$(Get-Date -Format 'yyyy.MM.dd')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.VERSION }}
+          release_name: Release ${{ env.VERSION }}
+          body: |
+            Automated nightly release.
+          draft: false
+          prerelease: true # Mark as pre-release
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          # IMPORTANT: Ensure this matches the actual output .exe name from the publish step
+          asset_path: ./publish/OracleOptimizer.exe
+          asset_name: OracleOptimizer.exe # The name of the asset in the GitHub release
+          asset_content_type: application/octet-stream
