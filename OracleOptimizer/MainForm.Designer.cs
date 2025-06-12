@@ -50,11 +50,18 @@ namespace OracleOptimizer
             geminiApiKeyTextBox = new TextBox();
             geminiModelLabel = new Label();
             geminiModelTextBox = new TextBox();
+            useLogicTestCheckBox = new CheckBox();
+            logicTestRowCount = new NumericUpDown();
+            usePerfTestCheckBox = new CheckBox();
+            perfTestRowCount = new NumericUpDown();
+            warningLabel = new Label();
             resultsTabControl.SuspendLayout();
             optimizedProcedureTab.SuspendLayout();
             geminiReportTab.SuspendLayout();
             performanceTab.SuspendLayout();
             statusStrip.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)logicTestRowCount).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)perfTestRowCount).BeginInit();
             SuspendLayout();
             // 
             // hostLabel
@@ -132,10 +139,10 @@ namespace OracleOptimizer
             // 
             analyzeButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             analyzeButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            analyzeButton.Location = new Point(647, 354);
+            analyzeButton.Location = new Point(647, 434);
             analyzeButton.Name = "analyzeButton";
             analyzeButton.Size = new Size(125, 30);
-            analyzeButton.TabIndex = 8;
+            analyzeButton.TabIndex = 8; // TabIndex will be updated later if needed, keeping original for now
             analyzeButton.Text = "Analyze & Optimize";
             analyzeButton.UseVisualStyleBackColor = true;
             // 
@@ -145,11 +152,11 @@ namespace OracleOptimizer
             resultsTabControl.Controls.Add(optimizedProcedureTab);
             resultsTabControl.Controls.Add(geminiReportTab);
             resultsTabControl.Controls.Add(performanceTab);
-            resultsTabControl.Location = new Point(12, 390);
+            resultsTabControl.Location = new Point(12, 470);
             resultsTabControl.Name = "resultsTabControl";
             resultsTabControl.SelectedIndex = 0;
             resultsTabControl.Size = new Size(760, 200);
-            resultsTabControl.TabIndex = 9;
+            resultsTabControl.TabIndex = 9; // TabIndex will be updated later if needed
             // 
             // optimizedProcedureTab
             // 
@@ -266,11 +273,68 @@ namespace OracleOptimizer
             geminiModelTextBox.TabIndex = 13;
             geminiModelTextBox.Text = "gemini-2.5-flash-preview-05-20";
             // 
+            // useLogicTestCheckBox
+            //
+            useLogicTestCheckBox.AutoSize = true;
+            useLogicTestCheckBox.Location = new Point(12, 385);
+            useLogicTestCheckBox.Name = "useLogicTestCheckBox";
+            useLogicTestCheckBox.Size = new Size(192, 19);
+            useLogicTestCheckBox.TabIndex = 14;
+            useLogicTestCheckBox.Text = "Validate logic with fake data";
+            useLogicTestCheckBox.UseVisualStyleBackColor = true;
+            //
+            // logicTestRowCount
+            //
+            logicTestRowCount.Location = new Point(220, 384);
+            logicTestRowCount.Maximum = new decimal(new int[] { 10000, 0, 0, 0 });
+            logicTestRowCount.Minimum = new decimal(new int[] { 100, 0, 0, 0 });
+            logicTestRowCount.Name = "logicTestRowCount";
+            logicTestRowCount.Size = new Size(120, 23);
+            logicTestRowCount.TabIndex = 15;
+            logicTestRowCount.Value = new decimal(new int[] { 1000, 0, 0, 0 });
+            logicTestRowCount.Increment = new decimal(new int[] { 100, 0, 0, 0 });
+            //
+            // usePerfTestCheckBox
+            //
+            usePerfTestCheckBox.AutoSize = true;
+            usePerfTestCheckBox.Location = new Point(12, 415);
+            usePerfTestCheckBox.Name = "usePerfTestCheckBox";
+            usePerfTestCheckBox.Size = new Size(202, 19);
+            usePerfTestCheckBox.TabIndex = 16;
+            usePerfTestCheckBox.Text = "Run performance test with temporary data";
+            usePerfTestCheckBox.UseVisualStyleBackColor = true;
+            //
+            // perfTestRowCount
+            //
+            perfTestRowCount.Location = new Point(220, 414);
+            perfTestRowCount.Maximum = new decimal(new int[] { 100000, 0, 0, 0 });
+            perfTestRowCount.Minimum = new decimal(new int[] { 1000, 0, 0, 0 });
+            perfTestRowCount.Name = "perfTestRowCount";
+            perfTestRowCount.Size = new Size(120, 23);
+            perfTestRowCount.TabIndex = 17;
+            perfTestRowCount.Value = new decimal(new int[] { 10000, 0, 0, 0 });
+            perfTestRowCount.Increment = new decimal(new int[] { 1000, 0, 0, 0 });
+            //
+            // warningLabel
+            //
+            warningLabel.AutoSize = true;
+            warningLabel.ForeColor = System.Drawing.Color.Red;
+            warningLabel.Location = new Point(12, 445);
+            warningLabel.Name = "warningLabel";
+            warningLabel.Size = new Size(310, 15);
+            warningLabel.TabIndex = 18; // Not interactive, so TabIndex might not be strictly necessary
+            warningLabel.Text = "WARNING: Inserts and rolls back data in the live database.";
+            //
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(784, 615);
+            Controls.Add(warningLabel);
+            Controls.Add(perfTestRowCount);
+            Controls.Add(usePerfTestCheckBox);
+            Controls.Add(logicTestRowCount);
+            Controls.Add(useLogicTestCheckBox);
             Controls.Add(geminiApiKeyTextBox);
             Controls.Add(geminiApiKeyLabel);
             Controls.Add(geminiModelTextBox);
@@ -297,6 +361,8 @@ namespace OracleOptimizer
             performanceTab.ResumeLayout(false);
             statusStrip.ResumeLayout(false);
             statusStrip.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)logicTestRowCount).EndInit();
+            ((System.ComponentModel.ISupportInitialize)perfTestRowCount).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -325,5 +391,10 @@ namespace OracleOptimizer
         private TextBox geminiApiKeyTextBox;
         private Label geminiModelLabel;
         private TextBox geminiModelTextBox;
+        private CheckBox useLogicTestCheckBox;
+        private NumericUpDown logicTestRowCount;
+        private CheckBox usePerfTestCheckBox;
+        private NumericUpDown perfTestRowCount;
+        private Label warningLabel;
     }
 }
