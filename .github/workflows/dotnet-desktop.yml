@@ -1,18 +1,18 @@
 # GitHub Actions Workflow: Build .csproj and Create Release
 #
 # WHAT THIS DOES:
-# 1. Triggers automatically when you push a new tag (e.g., "v1.0.0") to your repository.
+# 1. Triggers automatically when you push a new tag (e.g., "v1.0.0").
 # 2. Can also be triggered manually from the "Actions" tab.
-# 3. Sets up a fresh Windows environment and builds your project.
-# 4. Creates a new, formal GitHub Release corresponding to the tag name.
-# 5. Uploads your compiled .exe file as a permanent asset to that release.
+# 3. If triggered by a tag, it creates a full release with that version number.
+# 4. If triggered manually, it creates/updates a "Pre-release" for testing.
+# 5. Uploads your compiled .exe file as a permanent asset to the release.
 #
 # HOW TO USE:
-# 1. Place this file in '.github/workflows/release.yml' in your repository.
-# 2. To create a release, push a new tag:
-#    git tag v1.0.0
-#    git push origin v1.0.0
-# 3. To run manually, go to the Actions tab and click "Run workflow".
+# 1. To create a final release, push a new tag:
+#    git tag v1.0.1
+#    git push origin v1.0.1
+# 2. To create a test build, go to the Actions tab and click "Run workflow".
+#    Look for the "nightly" pre-release on your repository's Releases page.
 
 name: Build and Create Release
 
@@ -50,5 +50,10 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         # The 'files' option points to your compiled executable.
-        # This will find the .exe in the build output directory and attach it to the release.
         files: '**/bin/Release/**/*.exe'
+        # If run manually, name the release "Nightly Build". Otherwise, use the tag name.
+        name: ${{ github.event_name == 'workflow_dispatch' && 'Nightly Build' || github.ref_name }}
+        # If run manually, mark it as a pre-release.
+        prerelease: ${{ github.event_name == 'workflow_dispatch' }}
+        # If run manually, create/update a tag called "nightly". Otherwise, use the pushed tag.
+        tag_name: ${{ github.event_name == 'workflow_dispatch' && 'nightly' || github.ref_name }}
