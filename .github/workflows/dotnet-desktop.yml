@@ -6,17 +6,15 @@
 # 3. Locates and sets up MSBuild (the tool for building Visual Studio projects).
 # 4. Restores all the necessary NuGet packages for your project.
 # 5. Builds your project in 'Release' mode.
-# 6. Takes the compiled .exe file and uploads it as a downloadable 'artifact'.
+# 6. **NEW:** Lists all files in the build directory for debugging.
+# 7. Takes the compiled .exe file and uploads it as a downloadable 'artifact'.
 #
 # HOW TO USE:
-# 1. Create a folder named '.github' in the root of your repository if it doesn't exist.
-# 2. Inside that folder, create another folder named 'workflows'.
-# 3. Create a new file inside 'workflows' and name it something like 'build.yml'.
-# 4. Copy and paste the entire content of this file into your 'build.yml'.
-# 5. **IMPORTANT:** You may need to adjust the 'path' on line 46 to point to the
-#    exact location where your .exe is created. The path provided is a common
-#    default, but your project structure might be different. A good way to find it
-#    is to build your project locally in Release mode and see where the .exe appears.
+# 1. Place this file in '.github/workflows/build.yml' in your repository.
+# 2. Run the workflow.
+# 3. Check the log for the "List build output" step. This will show you exactly what
+#    files were created and where they are. You'll see either a .dll or a .exe.
+# 4. Adjust the final 'path' in the "Upload artifact" step to match the real file path.
 
 name: Build and Release EXE
 
@@ -46,7 +44,14 @@ jobs:
     - name: Build project
       run: msbuild.exe OracleOptimizer/OracleOptimizer.csproj /p:Configuration=Release
 
-    # Step 5: Upload the compiled .exe as an artifact
+    # Step 5: (DEBUGGING STEP) List all files in the output directory
+    # This will help you see exactly what was built and where it is.
+    # Look at the log for this step in your GitHub Actions run.
+    - name: List build output
+      run: Get-ChildItem -Path . -Recurse
+      shell: powershell
+
+    # Step 6: Upload the compiled .exe as an artifact
     # The resulting .exe will be available for download on the workflow summary page.
     - name: Upload artifact
       uses: actions/upload-artifact@v4
