@@ -1,5 +1,5 @@
 # Oracle SQL Optimizer WPF Application
-xXxXxXxX
+
 The Oracle SQL Optimizer is a .NET WPF desktop application designed to help users optimize Oracle SQL scripts using the Google Gemini API. It automates the process of sending a script to Gemini for optimization, running both the original and optimized versions (via validation queries), comparing their outputs, and presenting a comprehensive report.
 
 ## Features
