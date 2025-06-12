@@ -68,12 +68,12 @@ public static class DataTableComparator
         {
             for (int j = 0; j < dt1.Columns.Count; j++)
             {
-                object value1 = dt1.Rows[i][j];
-                object value2 = dt2.Rows[i][j];
+                object? value1 = dt1.Rows[i][j];
+                object? value2 = dt2.Rows[i][j];
 
                 // Handle DBNull values
-                string strValue1 = (value1 == DBNull.Value || value1 == null) ? "[NULL]" : value1.ToString();
-                string strValue2 = (value2 == DBNull.Value || value2 == null) ? "[NULL]" : value2.ToString();
+                string strValue1 = (value1 == DBNull.Value || value1 == null) ? "[NULL]" : Convert.ToString(value1);
+                string strValue2 = (value2 == DBNull.Value || value2 == null) ? "[NULL]" : Convert.ToString(value2);
 
                 if (strValue1 != strValue2)
                 {
