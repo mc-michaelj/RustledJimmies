@@ -5,14 +5,15 @@
 # 2. Can also be triggered manually from the "Actions" tab.
 # 3. If triggered by a tag, it creates a full release with that version number.
 # 4. If triggered manually, it creates/updates a "Pre-release" for testing.
-# 5. Uploads your compiled .exe file as a permanent asset to the release.
+# 5. Publishes the entire application as a single, self-contained .exe file.
+# 6. Uploads the single .exe file as a permanent asset to the release.
 #
 # HOW TO USE:
 # 1. To create a final release, push a new tag:
-#    git tag v1.0.1
-#    git push origin v1.0.1
-# 2. To create a test build, go to the Actions tab and click "Run workflow".
-#    Look for the "nightly" pre-release on your repository's Releases page.
+#    git tag v1.0.3
+#    git push origin v1.0.3
+# 2. To create a test build, run the workflow manually.
+# 3. On the Releases page, you can now download the single .exe file directly.
 
 name: Build and Create Release
 
@@ -41,16 +42,25 @@ jobs:
     - name: Restore NuGet packages
       run: nuget restore OracleOptimizer/OracleOptimizer.csproj
 
-    # Step 4: Build the project.
-    - name: Build project
-      run: msbuild.exe OracleOptimizer/OracleOptimizer.csproj /p:Configuration=Release
+    # Step 4: Publish the application as a single, self-contained file
+    - name: Publish as single file
+      # This command uses the 'publish' target with specific properties:
+      # /p:PublishSingleFile=true - Bundles the app into one .exe
+      # /p:SelfContained=true - Includes the .NET runtime in the .exe
+      # /p:RuntimeIdentifier=win-x64 - Specifies the target OS and architecture
+      run: >
+        msbuild.exe OracleOptimizer/OracleOptimizer.csproj /t:publish
+        /p:Configuration=Release
+        /p:PublishSingleFile=true
+        /p:SelfContained=true
+        /p:RuntimeIdentifier=win-x64
 
-    # Step 5: Create a GitHub Release and upload the .exe as an asset
+    # Step 5: Create a GitHub Release and upload the single .exe file
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        # The 'files' option points to your compiled executable.
-        files: '**/bin/Release/**/*.exe'
+        # The 'files' option now points to the single .exe in the publish directory.
+        files: 'OracleOptimizer/bin/Release/net8.0-windows/win-x64/publish/OracleOptimizer.exe'
         # If run manually, name the release "Nightly Build". Otherwise, use the tag name.
         name: ${{ github.event_name == 'workflow_dispatch' && 'Nightly Build' || github.ref_name }}
         # If run manually, mark it as a pre-release.
