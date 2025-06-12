@@ -629,6 +629,24 @@ namespace OracleOptimizer
             return sanitized.Length > 30 ? sanitized.Substring(0, 30) : sanitized; // Basic truncation for safety
         }
 
+        private string SanitizeForPlSqlIdentifier(string? name) // CS8604: Make 'name' parameter nullable
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "default_identifier";
+
+            // Replace non-alphanumeric characters (except underscore) with underscore
+            string sanitized = System.Text.RegularExpressions.Regex.Replace(name, @"[^a-zA-Z0-9_]", "_");
+
+            // Ensure it doesn't start with a number (PL/SQL identifiers cannot)
+            if (char.IsDigit(sanitized[0]))
+            {
+                sanitized = "_" + sanitized;
+            }
+            // Max length for PL/SQL identifiers is typically 30 characters in older Oracle versions, 128c in newer.
+            // Be mindful if very long table/column names are possible. Truncating might be needed.
+            // For now, assume names are reasonably sized or rely on Oracle to handle longer names if supported.
+            return sanitized.Length > 30 ? sanitized.Substring(0, 30) : sanitized; // Basic truncation for safety
+        }
+
         private string GenerateInsertStatements(string geminiSchemaJson, int rowCount, out List<string> tableNames)
         {
             tableNames = new List<string>();
@@ -719,32 +737,70 @@ namespace OracleOptimizer
                             catch { /* Use default if parsing fails */ }
                         }
 
-                        string prefix = "Val_";
-                        string suffix = "_" + i.ToString();
-                        int prefixSuffixLength = prefix.Length + suffix.Length;
-                        int availableLength = declaredLength - prefixSuffixLength - 2; // -2 for the quotes ''
+                        int declaredLength = 30; // Default
+                        if (column.DataType != null && column.DataType.Contains("("))
+                        {
+                            try
+                            {
+                                int startIndex = column.DataType.IndexOf("(") + 1;
+                                int endIndex = column.DataType.IndexOf(")");
+                                if (endIndex > startIndex)
+                                {
+                                    string lenStr = column.DataType.Substring(startIndex, endIndex - startIndex);
+                                    if (int.TryParse(lenStr, out int parsedLength))
+                                    {
+                                        declaredLength = Math.Max(1, Math.Min(parsedLength, 4000)); // Clamp to reasonable Oracle limits
+                                    }
+                                }
+                            }
+                            catch { /* Use default if parsing fails */ }
+                        }
+
+                        // CS0122 Fix: Use maxILength for C# calculations regarding the PL/SQL 'i' variable's string representation.
+                        int maxILength = rowCount.ToString().Length;
+                        string prefixForCalc = "Val_";
+                        string suffixTemplateForCalc = "_"; // Represents the underscore before 'i' in generated PL/SQL
+
+                        // Calculate length needed for prefix, the underscore, and the max possible length of 'i' as a string.
+                        int fixedPartsLength = prefixForCalc.Length + suffixTemplateForCalc.Length + maxILength;
+                        int availableLength = declaredLength - fixedPartsLength - 2; // -2 for the quotes ''
 
                         if (availableLength >= 1)
                         {
                             int randomPartLength = Math.Min(availableLength, 20); // Max 20 chars for random part
-                            generatedValue = $"'{prefix}' || DBMS_RANDOM.STRING('A', {randomPartLength}) || '{suffix}'";
+                            // Generated PL/SQL will use the actual PL/SQL loop variable 'i'
+                            generatedValue = $"'{prefixForCalc}' || DBMS_RANDOM.STRING('A', {randomPartLength}) || '{suffixTemplateForCalc}' || i";
                         }
                         else
                         {
-                            // Fallback if not enough space for prefix, random part, and suffix
-                            string fallbackSuffix = "_" + i.ToString();
-                            if (declaredLength > fallbackSuffix.Length + 3) // 'Err' + '_' + i + ''
+                            // Fallback: Try to generate 'Err_' || i, ensuring it fits.
+                            string errPrefixForCalc = "Err_";
+                            fixedPartsLength = errPrefixForCalc.Length + maxILength;
+                            availableLength = declaredLength - fixedPartsLength - 2; // -2 for quotes
+
+                            if (availableLength >= 0) // Need at least 0 for the errPrefix to concatenate with i
                             {
-                                generatedValue = $"'Err{fallbackSuffix.Substring(0, Math.Min(fallbackSuffix.Length, declaredLength - 3 -2))}'";
+                                 // Ensure the 'Err_' and 'i' concatenation doesn't exceed declaredLength.
+                                 // This is tricky because 'i' in PL/SQL varies. The check is against maxILength.
+                                 // A simpler robust fallback is to use a very short string or i truncated if possible.
+                                generatedValue = $"'E_' || TO_CHAR(i)"; // Example: E_1, E_100
+                                // Check if this simple fallback itself is too long
+                                // Max length of 'E_' || i is 'E_'.Length + maxILength
+                                if (("E_".Length + maxILength + 2) > declaredLength)
+                                {
+                                    if (declaredLength >= 2) generatedValue = "''"; // Empty string if 'E_i' is too long
+                                    else generatedValue = "NULL"; // If even '' is too long
+                                }
                             }
-                            else if (declaredLength >= 2) // Minimum for ''
+                            else if (declaredLength >= 2)
                             {
-                                generatedValue = "''"; // Empty Oracle string
+                                generatedValue = "''"; // Empty Oracle string if nothing else fits
                             }
-                            else { // Should be rare, means declared length is 0 or 1
+                            else
+                            {
                                 generatedValue = "NULL"; // Cannot fit even ''
                             }
-                             System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: VARCHAR2 column {column.ColumnName} in table {table.TableName} has declared length {declaredLength} too small for full pattern. Using fallback: {generatedValue}");
+                            System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: VARCHAR2 column {column.ColumnName} in table {table.TableName} has declared length {declaredLength} too small for full pattern 'Val_RANDOM_i'. Using fallback: {generatedValue}");
                         }
                     }
                     else if (columnDataTypeUpper.StartsWith("NUMBER") || columnDataTypeUpper.StartsWith("INTEGER") || columnDataTypeUpper.StartsWith("INT") || columnDataTypeUpper.StartsWith("DECIMAL") || columnDataTypeUpper.StartsWith("FLOAT"))
