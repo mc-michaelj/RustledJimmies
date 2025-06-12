@@ -34,28 +34,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Step 2: Set up MSBuild.
-    - name: Add msbuild to path
-      uses: microsoft/setup-msbuild@v2
+    # Step 2: Set up .NET SDK
+    # This ensures the correct version of the .NET SDK is available.
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
 
-    # Step 3: Restore NuGet packages for the project
-    - name: Restore NuGet packages
-      run: nuget restore OracleOptimizer/OracleOptimizer.csproj
-
-    # Step 4: Publish the application as a single, self-contained file
-    - name: Publish as single file
-      # This command uses the 'publish' target with specific properties:
-      # /p:PublishSingleFile=true - Bundles the app into one .exe
-      # /p:SelfContained=true - Includes the .NET runtime in the .exe
-      # /p:RuntimeIdentifier=win-x64 - Specifies the target OS and architecture
+    # Step 3: Publish the application as a single, self-contained file
+    - name: Publish application
+      # This single `dotnet publish` command handles restoring dependencies, building, and packaging.
+      # It's the modern, recommended way to build for deployment.
+      # -c Release: Specifies the Release configuration.
+      # --runtime win-x64: Specifies the target OS and architecture, fixing the error.
+      # --self-contained true: Includes the .NET runtime in the .exe.
+      # /p:PublishSingleFile=true: Bundles the app into one .exe.
       run: >
-        msbuild.exe OracleOptimizer/OracleOptimizer.csproj /t:publish
-        /p:Configuration=Release
+        dotnet publish OracleOptimizer/OracleOptimizer.csproj 
+        -c Release 
+        --runtime win-x64 
+        --self-contained true 
         /p:PublishSingleFile=true
-        /p:SelfContained=true
-        /p:RuntimeIdentifier=win-x64
 
-    # Step 5: Create a GitHub Release and upload the single .exe file
+    # Step 4: Create a GitHub Release and upload the single .exe file
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
