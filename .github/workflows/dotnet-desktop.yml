@@ -1,11 +1,11 @@
-# GitHub Actions Workflow: Build .sln and Upload .exe
+# GitHub Actions Workflow: Build .csproj and Upload .exe
 #
 # WHAT THIS DOES:
 # 1. Triggers automatically every time you 'git push' to your 'main' branch.
 # 2. Sets up a fresh Windows environment.
-# 3. Locates and sets up MSBuild (the tool for building Visual Studio solutions).
+# 3. Locates and sets up MSBuild (the tool for building Visual Studio projects).
 # 4. Restores all the necessary NuGet packages for your project.
-# 5. Builds your solution in 'Release' mode.
+# 5. Builds your project in 'Release' mode.
 # 6. Takes the compiled .exe file and uploads it as a downloadable 'artifact'.
 #
 # HOW TO USE:
@@ -13,8 +13,8 @@
 # 2. Inside that folder, create another folder named 'workflows'.
 # 3. Create a new file inside 'workflows' and name it something like 'build.yml'.
 # 4. Copy and paste the entire content of this file into your 'build.yml'.
-# 5. **IMPORTANT:** You will need to change the placeholder 'YourSolutionName.sln'
-#    on lines 31 and 35 to the actual name of your solution file.
+# 5. **IMPORTANT:** You will need to change the placeholder 'YourProjectName.csproj'
+#    on lines 31 and 35 to the actual name of your project file.
 # 6. **IMPORTANT:** You may need to adjust the 'path' on line 45 to point to the
 #    exact location where your .exe is created. The path provided is a common
 #    default, but your project structure might be different. A good way to find it
@@ -40,13 +40,13 @@ jobs:
     - name: Add msbuild to path
       uses: microsoft/setup-msbuild@v2
 
-    # Step 3: Restore NuGet packages. This is like running 'Update-Package' in Visual Studio
+    # Step 3: Restore NuGet packages for the project
     - name: Restore NuGet packages
-      run: nuget restore RustledJimmies.sln # <-- CHANGE THIS to your .sln file name
+      run: nuget restore OracleOptimizer/OracleOptimizer.csproj # <-- Changed to your project path
 
-    # Step 4: Build the solution. This runs MSBuild with the 'Release' configuration.
-    - name: Build solution
-      run: msbuild.exe RustledJimmies.sln /p:Configuration=Release # <-- CHANGE THIS to your .sln file name
+    # Step 4: Build the project. This runs MSBuild with the 'Release' configuration.
+    - name: Build project
+      run: msbuild.exe OracleOptimizer/OracleOptimizer.csproj /p:Configuration=Release # <-- Changed to your project path
 
     # Step 5: Upload the compiled .exe as an artifact
     # The resulting .exe will be available for download on the workflow summary page.
