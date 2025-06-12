@@ -49,12 +49,14 @@ jobs:
       # --runtime win-x64: Specifies the target OS and architecture, fixing the error.
       # --self-contained true: Includes the .NET runtime in the .exe.
       # /p:PublishSingleFile=true: Bundles the app into one .exe.
+      # /p:IncludeAllContentForSelfExtract=true: Forces inclusion of all content, including native DLLs.
       run: >
         dotnet publish OracleOptimizer/OracleOptimizer.csproj 
         -c Release 
         --runtime win-x64 
         --self-contained true 
         /p:PublishSingleFile=true
+        /p:IncludeAllContentForSelfExtract=true
 
     # Step 4: Create a GitHub Release and upload the single .exe file
     - name: Create Release
