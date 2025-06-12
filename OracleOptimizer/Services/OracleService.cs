@@ -32,7 +32,7 @@ namespace OracleOptimizer.Services
             }
         }
 
-        public async Task<DataTable> ExecuteQueryWithinTransactionAsync(OracleConnection connection, OracleTransaction transaction, string sql)
+        public async Task<DataTable> ExecuteQueryWithinTransactionAsync(OracleConnection connection, OracleTransaction? transaction, string sql)
         {
             var dataTable = new DataTable();
             using (var command = new OracleCommand(sql, connection))

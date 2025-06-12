@@ -469,19 +469,19 @@ namespace OracleOptimizer
         private class ColumnSchema
         {
             [JsonProperty("columnName")]
-            public string ColumnName { get; set; }
+            public string? ColumnName { get; set; }
 
             [JsonProperty("dataType")]
-            public string DataType { get; set; }
+            public string? DataType { get; set; }
         }
 
         private class TableSchema
         {
             [JsonProperty("tableName")]
-            public string TableName { get; set; }
+            public string? TableName { get; set; }
 
             [JsonProperty("columns")]
-            public List<ColumnSchema> Columns { get; set; }
+            public List<ColumnSchema>? Columns { get; set; }
         }
 
         private string GenerateFakeDataCte(string geminiSchemaJson, int rowCount)
@@ -499,7 +499,7 @@ namespace OracleOptimizer
                 return string.Empty;
             }
 
-            List<TableSchema> tableSchemas;
+            List<TableSchema>? tableSchemas;
             try
             {
                 tableSchemas = JsonConvert.DeserializeObject<List<TableSchema>>(geminiSchemaJson);
@@ -536,33 +536,36 @@ namespace OracleOptimizer
                     for (int colIdx = 0; colIdx < table.Columns.Count; colIdx++)
                     {
                         ColumnSchema column = table.Columns[colIdx];
-                        string generatedValue = "";
-                        switch (column.DataType.ToUpperInvariant())
-                        {
-                            case "VARCHAR2":
-                            case "VARCHAR":
-                            case "CHAR":
-                            case "NVARCHAR2":
-                                // Using a simple concatenation with table, column, and row index for uniqueness and traceability
-                                generatedValue = $"'Val_{table.TableName.Substring(0, Math.Min(table.TableName.Length, 3))}_{column.ColumnName.Substring(0, Math.Min(column.ColumnName.Length, 3))}_{i}'";
-                                break;
-                            case "NUMBER":
-                            case "INTEGER":
-                            case "INT":
-                            case "DECIMAL":
-                            case "FLOAT":
-                                // Using a simple row index, easily predictable for testing
-                                generatedValue = $"{i}";
-                                break;
-                            case "DATE":
-                                // Generating a sequence of dates starting from SYSDATE - rowCount days ago up to SYSDATE - 1 day ago
-                                generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + {i-1}";
-                                break;
-                            default:
-                                generatedValue = "NULL"; // Default for unknown types
-                                System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
-                                break;
+                        string generatedValue;
+                        string? colDataTypeUpper = column.DataType?.ToUpperInvariant();
+
+                        if (colDataTypeUpper == null) {
+                            generatedValue = "NULL";
                         }
+                        else if (colDataTypeUpper.StartsWith("VARCHAR2") || colDataTypeUpper.StartsWith("VARCHAR") || colDataTypeUpper.StartsWith("CHAR") || colDataTypeUpper.StartsWith("NVARCHAR2"))
+                        {
+                            // Using a simple concatenation with table, column, and row index for uniqueness and traceability
+                            // Ensure column and table names are not null before trying to Substring
+                            string tableNamePart = table.TableName != null ? table.TableName.Substring(0, Math.Min(table.TableName.Length, 3)) : "TAB";
+                            string colNamePart = column.ColumnName != null ? column.ColumnName.Substring(0, Math.Min(column.ColumnName.Length, 3)) : "COL";
+                            generatedValue = $"'Val_{tableNamePart}_{colNamePart}_{i}'";
+                        }
+                        else if (colDataTypeUpper.StartsWith("NUMBER") || colDataTypeUpper.StartsWith("INTEGER") || colDataTypeUpper.StartsWith("INT") || colDataTypeUpper.StartsWith("DECIMAL") || colDataTypeUpper.StartsWith("FLOAT"))
+                        {
+                            // Using a simple row index, easily predictable for testing
+                            generatedValue = $"{i}";
+                        }
+                        else if (colDataTypeUpper.StartsWith("DATE"))
+                        {
+                            // Generating a sequence of dates starting from SYSDATE - rowCount days ago up to SYSDATE - 1 day ago
+                            generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + {i - 1}";
+                        }
+                        else
+                        {
+                            generatedValue = "NULL"; // Default for unknown types
+                            System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
+                        }
+
                         sb.Append($"{generatedValue} AS \"{column.ColumnName}\""); // Enclose column name in quotes
 
                         if (colIdx < table.Columns.Count - 1)
@@ -640,7 +643,7 @@ namespace OracleOptimizer
                 return "-- Error: Row count must be positive.\n";
             }
 
-            List<TableSchema> tableSchemas;
+            List<TableSchema>? tableSchemas;
             try
             {
                 tableSchemas = JsonConvert.DeserializeObject<List<TableSchema>>(geminiSchemaJson);
@@ -687,54 +690,77 @@ namespace OracleOptimizer
 
                 foreach (ColumnSchema column in table.Columns)
                 {
-                    string generatedValue;
-                    string columnDataTypeUpper = column.DataType.ToUpperInvariant();
+                    string generatedValue = "NULL"; // Ensure generatedValue is always initialized
+                    string? columnDataTypeUpper = column.DataType?.ToUpperInvariant();
 
-                    // Handling potential length constraints for VARCHAR2 more carefully
-                    int defaultVarcharLength = 30; // Default length for random strings if not specified
-                    if (columnDataTypeUpper.Contains("VARCHAR2") && column.DataType.Contains("("))
+                    if (columnDataTypeUpper == null)
                     {
-                        try
+                        // generatedValue remains "NULL"
+                        System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Null data type for column {column.ColumnName} in table {table.TableName}. Using NULL.");
+                    }
+                    else if (columnDataTypeUpper.StartsWith("VARCHAR2") || columnDataTypeUpper.StartsWith("VARCHAR") || columnDataTypeUpper.StartsWith("CHAR") || columnDataTypeUpper.StartsWith("NVARCHAR2"))
+                    {
+                        int declaredLength = 30; // Default
+                        if (column.DataType != null && column.DataType.Contains("("))
                         {
-                            string lenStr = column.DataType.Substring(column.DataType.IndexOf("(") + 1, column.DataType.IndexOf(")") - column.DataType.IndexOf("(") - 1);
-                            defaultVarcharLength = int.Parse(lenStr);
-                            if (defaultVarcharLength > 4000) defaultVarcharLength = 4000; // Max for DBMS_RANDOM.STRING in SQL
-                            if (defaultVarcharLength == 0) defaultVarcharLength = 1; // Min length 1
+                            try
+                            {
+                                int startIndex = column.DataType.IndexOf("(") + 1;
+                                int endIndex = column.DataType.IndexOf(")");
+                                if (endIndex > startIndex)
+                                {
+                                    string lenStr = column.DataType.Substring(startIndex, endIndex - startIndex);
+                                    if (int.TryParse(lenStr, out int parsedLength))
+                                    {
+                                        declaredLength = Math.Max(1, Math.Min(parsedLength, 4000)); // Clamp to reasonable Oracle limits
+                                    }
+                                }
+                            }
+                            catch { /* Use default if parsing fails */ }
                         }
-                        catch { /* Use default if parsing fails */ }
+
+                        string prefix = "Val_";
+                        string suffix = "_" + i.ToString();
+                        int prefixSuffixLength = prefix.Length + suffix.Length;
+                        int availableLength = declaredLength - prefixSuffixLength - 2; // -2 for the quotes ''
+
+                        if (availableLength >= 1)
+                        {
+                            int randomPartLength = Math.Min(availableLength, 20); // Max 20 chars for random part
+                            generatedValue = $"'{prefix}' || DBMS_RANDOM.STRING('A', {randomPartLength}) || '{suffix}'";
+                        }
+                        else
+                        {
+                            // Fallback if not enough space for prefix, random part, and suffix
+                            string fallbackSuffix = "_" + i.ToString();
+                            if (declaredLength > fallbackSuffix.Length + 3) // 'Err' + '_' + i + ''
+                            {
+                                generatedValue = $"'Err{fallbackSuffix.Substring(0, Math.Min(fallbackSuffix.Length, declaredLength - 3 -2))}'";
+                            }
+                            else if (declaredLength >= 2) // Minimum for ''
+                            {
+                                generatedValue = "''"; // Empty Oracle string
+                            }
+                            else { // Should be rare, means declared length is 0 or 1
+                                generatedValue = "NULL"; // Cannot fit even ''
+                            }
+                             System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: VARCHAR2 column {column.ColumnName} in table {table.TableName} has declared length {declaredLength} too small for full pattern. Using fallback: {generatedValue}");
+                        }
                     }
-
-
-                    switch (columnDataTypeUpper)
+                    else if (columnDataTypeUpper.StartsWith("NUMBER") || columnDataTypeUpper.StartsWith("INTEGER") || columnDataTypeUpper.StartsWith("INT") || columnDataTypeUpper.StartsWith("DECIMAL") || columnDataTypeUpper.StartsWith("FLOAT"))
                     {
-                        case var dt when dt.StartsWith("VARCHAR2"):
-                        case var dt when dt.StartsWith("VARCHAR"):
-                        case var dt when dt.StartsWith("CHAR"):
-                        case var dt when dt.StartsWith("NVARCHAR2"):
-                            // DBMS_RANDOM.STRING('A', length) - 'A' for Alphanumeric. Length should be less than column size.
-                            // Max length for DBMS_RANDOM.STRING is 60 in PL/SQL if type is X or P. 'A' is fine.
-                            // We'll use a smaller length to be safe and add row index for uniqueness.
-                            int randomStringLength = Math.Min(defaultVarcharLength - 10, 20); // e.g., reserve 10 for prefix/suffix, max 20 random part
-                            if (randomStringLength < 1) randomStringLength = 1;
-                            generatedValue = $"'Val_' || DBMS_RANDOM.STRING('A', {randomStringLength}) || '_' || i";
-                            break;
-                        case var dt when dt.StartsWith("NUMBER"):
-                        case var dt when dt.StartsWith("INTEGER"):
-                        case var dt when dt.StartsWith("INT"):
-                        case var dt when dt.StartsWith("DECIMAL"):
-                        case var dt when dt.StartsWith("FLOAT"):
-                             // Add i to ensure some level of uniqueness if DBMS_RANDOM.VALUE produces similar numbers for small ranges.
-                            generatedValue = $"TRUNC(DBMS_RANDOM.VALUE(1, 100000)) + MOD(i, 100000)";
-                            break;
-                        case var dt when dt.StartsWith("DATE"):
-                            generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + MOD(i-1, 365*50)"; // spread over 50 years
-                            break;
-                        default:
-                            generatedValue = "NULL";
-                            System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
-                            break;
+                        generatedValue = $"TRUNC(DBMS_RANDOM.VALUE(1, 100000)) + MOD(i, 100000)";
                     }
-                    // Column names should be quoted if they can contain special characters or are case-sensitive.
+                    else if (columnDataTypeUpper.StartsWith("DATE"))
+                    {
+                        generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + MOD(i-1, 365*50)"; // spread over 50 years
+                    }
+                    else
+                    {
+                        // generatedValue remains "NULL"
+                        System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
+                    }
+
                     sb.AppendLine($"    V_Fake_{sanitizedTableName}_Data(i).\"{column.ColumnName}\" := {generatedValue};");
                 }
                 sb.AppendLine("  END LOOP;");
