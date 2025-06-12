@@ -1,26 +1,29 @@
 {
   "format": 1,
   "restore": {
-    "/app/OracleOptimizer/OracleOptimizer.csproj": {}
+    "C:\\Users\\MichaelJ\\repos\\RustledJimmies\\OracleOptimizer\\OracleOptimizer.csproj": {}
   },
   "projects": {
-    "/app/OracleOptimizer/OracleOptimizer.csproj": {
+    "C:\\Users\\MichaelJ\\repos\\RustledJimmies\\OracleOptimizer\\OracleOptimizer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/app/OracleOptimizer/OracleOptimizer.csproj",
+        "projectUniqueName": "C:\\Users\\MichaelJ\\repos\\RustledJimmies\\OracleOptimizer\\OracleOptimizer.csproj",
         "projectName": "OracleOptimizer",
-        "projectPath": "/app/OracleOptimizer/OracleOptimizer.csproj",
-        "packagesPath": "/home/swebot/.nuget/packages/",
-        "outputPath": "/app/OracleOptimizer/obj/",
+        "projectPath": "C:\\Users\\MichaelJ\\repos\\RustledJimmies\\OracleOptimizer\\OracleOptimizer.csproj",
+        "packagesPath": "C:\\Users\\MichaelJ\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\MichaelJ\\repos\\RustledJimmies\\OracleOptimizer\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/home/swebot/.nuget/NuGet/NuGet.Config"
+          "C:\\Users\\MichaelJ\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0-windows"
         ],
         "sources": {
-          "https://api.nuget.org/v3/index.json": {}
+          "https://nexus.sedc.sedata.com/repository/meridian-testing-nuget/": {},
+          "https://nexus.sedc.sedata.com/repository/meridian-testing-nuget/": {},
+          "https://www.nuget.org/api/v2/": {}
         },
         "frameworks": {
           "net8.0-windows7.0": {
@@ -63,12 +66,6 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "downloadDependencies": [
-            {
-              "name": "Microsoft.WindowsDesktop.App.Ref",
-              "version": "[8.0.17, 8.0.17]"
-            }
-          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
@@ -77,7 +74,7 @@
               "privateAssets": "none"
             }
           },
-          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/8.0.411/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.411/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

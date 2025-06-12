@@ -21,7 +21,7 @@ public partial class MainViewModel : ObservableObject
 
     // --- Observable Properties ---
     [ObservableProperty]
-    private string _connectionString = "cisconvert/cisconvert@dev5-mer-db:1521/TCTN_MASTER";
+    private string _connectionString = "User Id=cisconvert;Password=cisconvert;Data Source=dev5-mer-db:1521/TCTN_MASTER";
 
     [ObservableProperty]
     private string _originalSql = "";
@@ -146,25 +146,6 @@ public partial class MainViewModel : ObservableObject
             // Let's assume the "optimized_sql" is a DML or a script that doesn't return a data table directly for comparison.
             // The comparison will be based on "validation_queries".
 
-            StatusBarText = "Executing optimized SQL (as non-query)...";
-            stopwatch.Restart();
-            // _databaseService.ExecuteNonQuery(ConnectionString, geminiResponse.OptimizedSql); // Original interpretation
-            // If the optimized script IS a query, and we need its direct output, this should be ExecuteQuery.
-            // However, the spec says "validation_queries" are used for 'afterData'.
-            // Let's assume the optimized_sql is run (e.g., it might be an ALTER statement, or a block)
-            // and then validation queries are run to check the state of data.
-
-            // Let's reconsider: If the goal is to compare output, and the original is a query,
-            // the optimized one should also be a query. The validation_queries might be for *additional* checks.
-            // The spec says: "execute the validation_queries and store the result in DataTable afterData"
-            // This implies `afterData` comes from `validation_queries`.
-            // What if `validation_queries` is empty or not provided?
-            // If `validation_queries` is the source for `afterData`, then `beforeData` should also come from similar queries.
-            // The current `beforeData` comes from `OriginalSql`. This is the most direct comparison.
-            // Let's assume `geminiResponse.OptimizedSql` is the script whose output needs to be compared.
-            // And `validation_queries` are *additional* checks if provided by Gemini.
-            // For direct output comparison, if OriginalSql returns data, OptimizedSql should too.
-
             // Revised approach for "AFTER RUN":
             // We need to run the *optimized SQL* and get its data for comparison,
             // if the original SQL was a query.
@@ -238,7 +219,7 @@ public partial class MainViewModel : ObservableObject
             }
             else
             {
-                 // This case should have been caught above, but as a fallback:
+                // This case should have been caught above, but as a fallback:
                 ValidationDetails = "Validation FAILED: No validation queries provided by Gemini.";
                 StatusBarText = "Validation FAILED. Optimized script rejected.";
                 OptimizedSql = geminiResponse.OptimizedSql ?? string.Empty; // Show it but don't enable save
@@ -263,7 +244,7 @@ public partial class MainViewModel : ObservableObject
             {
                 StatusBarText = "Validation FAILED. Optimized script has been rejected.";
                 // OptimizedSql = ""; // Clear it as per spec "Optimized script shall be rejected"
-                                        // However, user might still want to see it. Let's show it but disable save.
+                // However, user might still want to see it. Let's show it but disable save.
                 OptimizedSql = geminiResponse.OptimizedSql ?? string.Empty; // Show it, but IsSaveEnabled remains false.
                 IsSaveEnabled = false;
             }
@@ -273,10 +254,12 @@ public partial class MainViewModel : ObservableObject
             perfReportBuilder.AppendLine($"Original SQL Execution Time: {originalSqlExecutionTime.TotalMilliseconds:F2} ms");
             if (afterData != null) // afterData would be null if validation queries weren't run
             {
-               perfReportBuilder.AppendLine($"Optimized SQL (Validation Query) Execution Time: {optimizedSqlExecutionTime.TotalMilliseconds:F2} ms");
-               perfReportBuilder.AppendLine($"Delta: {(originalSqlExecutionTime - optimizedSqlExecutionTime).TotalMilliseconds:F2} ms");
-            } else {
-               perfReportBuilder.AppendLine($"Optimized SQL (Validation Query) Execution Time: Not run.");
+                perfReportBuilder.AppendLine($"Optimized SQL (Validation Query) Execution Time: {optimizedSqlExecutionTime.TotalMilliseconds:F2} ms");
+                perfReportBuilder.AppendLine($"Delta: {(originalSqlExecutionTime - optimizedSqlExecutionTime).TotalMilliseconds:F2} ms");
+            }
+            else
+            {
+                perfReportBuilder.AppendLine($"Optimized SQL (Validation Query) Execution Time: Not run.");
             }
             PerformanceReport = perfReportBuilder.ToString();
 

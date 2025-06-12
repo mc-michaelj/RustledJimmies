@@ -4,16 +4,17 @@
 winexe
 C#
 .cs
-/app/OracleOptimizer/obj/Debug/net8.0-windows/
+C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\obj\Debug\net8.0-windows\
 OracleOptimizer
 none
 false
 TRACE;DEBUG;NET;NET8_0;NETCOREAPP
-/app/OracleOptimizer/App.xaml
-11185608332
+C:\Users\MichaelJ\repos\RustledJimmies\OracleOptimizer\App.xaml
+11256845736
 
-10348990105
-201-293187573
-Views/MainView.xaml;
+10743951223
+201650920134
+Views\MainView.xaml;
 
 False
+
