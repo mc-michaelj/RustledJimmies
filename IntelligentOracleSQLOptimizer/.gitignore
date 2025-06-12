@@ -1,0 +1,7 @@
+.vs/**/*
+IntelligentOracleSQLOptimizer/.vs/**/*
+IntelligentOracleSQLOptimizer/bin/**/*
+IntelligentOracleSQLOptimizer/obj/**/*
+IntelligentOracleSQLOptimizer.Library/.vs/**/*
+IntelligentOracleSQLOptimizer.Library/bin/**/*
+IntelligentOracleSQLOptimizer.Library/obj/**/*

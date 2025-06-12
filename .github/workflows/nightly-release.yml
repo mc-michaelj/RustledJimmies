@@ -11,21 +11,28 @@ jobs:
     name: Build and Release
     runs-on: windows-latest
 
+    permissions: # Needed for creating releases and uploading assets
+      contents: write
+      # packages: write # Only if pushing to GitHub Packages
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          ref: jdub # Checkout the jdub branch for the release
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x' # Ensure this matches the project's .NET version
+          dotnet-version: '8.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore ./OracleOptimizer/OracleOptimizer.csproj # Specify path to csproj
+        run: dotnet restore IntelligentOracleSQLOptimizer/IntelligentOracleSQLOptimizer.csproj
 
       - name: Build and Publish Application
         # This command creates a single, self-contained .exe for Windows
-        run: dotnet publish ./OracleOptimizer/OracleOptimizer.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish # Specify path to csproj
+        # Ensure the project path is correct.
+        run: dotnet publish IntelligentOracleSQLOptimizer/IntelligentOracleSQLOptimizer.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
 
       - name: Get Release Version
         # Creates a version string like "nightly-2025.06.12"
@@ -43,7 +50,8 @@ jobs:
           body: |
             Automated nightly release.
           draft: false
-          prerelease: true # Mark as pre-release
+          prerelease: true
+          target_commitish: jdub # Ensure release is created from jdub branch
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -51,7 +59,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          # IMPORTANT: Ensure this matches the actual output .exe name from the publish step
-          asset_path: ./publish/OracleOptimizer.exe
-          asset_name: OracleOptimizer.exe # The name of the asset in the GitHub release
+          # IMPORTANT: Project name is IntelligentOracleSQLOptimizer
+          asset_path: ./publish/IntelligentOracleSQLOptimizer.exe
+          asset_name: OracleOptimizer.exe
           asset_content_type: application/octet-stream
