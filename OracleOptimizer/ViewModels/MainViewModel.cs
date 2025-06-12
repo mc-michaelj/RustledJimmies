@@ -21,7 +21,7 @@ public partial class MainViewModel : ObservableObject
 
     // --- Observable Properties ---
     [ObservableProperty]
-    private string _connectionString = ""; // Provide a default or load from config
+    private string _connectionString = "cisconvert/cisconvert@dev5-mer-db:1521/TCTN_MASTER";
 
     [ObservableProperty]
     private string _originalSql = "";
