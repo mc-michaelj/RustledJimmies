@@ -126,5 +126,85 @@ Your Response MUST be a JSON object with the following exact structure and keys:
                 throw new JsonReaderException($"Failed to parse the following JSON block from Gemini: {jsonBlock}", ex);
             }
         }
+
+        public async Task<string> GetTableSchemaFromGemini(string sqlScript, string modelName)
+        {
+            string prompt = @"Based on the following SQL script, return a JSON object describing the tables involved. 
+The JSON must be an array where each object has 'tableName' and an array of 'columns' with 'columnName' and 'dataType' (use Oracle types like VARCHAR2, NUMBER, DATE).
+For each 'tableName', you MUST provide the fully qualified name, including the schema (e.g., 'MYSCHEMA.MYTABLE'). If a table is used without a schema in the script, you must still identify and include its correct schema in the response.
+This is critical to avoid 'table not found' errors during testing.
+SQL Script: {sqlScript}";
+
+            prompt = prompt.Replace("{sqlScript}", sqlScript);
+
+            var requestBody = new
+            {
+                contents = new[]
+                {
+                    new
+                    {
+                        parts = new[]
+                        {
+                            new { text = prompt }
+                        }
+                    }
+                }
+            };
+
+            var content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync($"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={_apiKey}", content);
+
+            // Log the request and response details
+            System.Diagnostics.Debug.WriteLine($"Request URL (GetTableSchemaFromGemini): https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={_apiKey}");
+            System.Diagnostics.Debug.WriteLine($"Request Body (GetTableSchemaFromGemini): {JsonConvert.SerializeObject(requestBody)}");
+            System.Diagnostics.Debug.WriteLine($"Response Status (GetTableSchemaFromGemini): {response.StatusCode}");
+            var responseContent = await response.Content.ReadAsStringAsync();
+            System.Diagnostics.Debug.WriteLine($"Response Content (GetTableSchemaFromGemini): {responseContent}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"Error calling Gemini API (GetTableSchemaFromGemini): {response.StatusCode}. Details: {responseContent}");
+            }
+
+            dynamic? parsedJson = JsonConvert.DeserializeObject<dynamic>(responseContent);
+            string? modelResponseText = parsedJson?.candidates[0]?.content?.parts[0]?.text?.ToString();
+
+            if (string.IsNullOrWhiteSpace(modelResponseText))
+            {
+                throw new Exception("Gemini returned an empty or invalid response for GetTableSchemaFromGemini.");
+            }
+
+            // Unlike AnalyzeSqlAsync, we expect the response to be the JSON string directly,
+            // as requested in the prompt. We might still need to trim markdown if Gemini wraps it.
+            string jsonResult = modelResponseText.Trim();
+            string jsonMarker = "```json";
+            if (jsonResult.StartsWith(jsonMarker))
+            {
+                jsonResult = jsonResult.Substring(jsonMarker.Length);
+                if (jsonResult.EndsWith("```"))
+                {
+                    jsonResult = jsonResult.Substring(0, jsonResult.Length - 3);
+                }
+                jsonResult = jsonResult.Trim();
+            }
+            // A simpler check if it's just JSON without markdown, in case the above is too aggressive or unnecessary
+            else if (jsonResult.StartsWith("{") && jsonResult.EndsWith("}") || jsonResult.StartsWith("[") && jsonResult.EndsWith("]"))
+            {
+                // It's likely plain JSON, do nothing further for stripping
+            }
+            else
+            {
+                // If it's not wrapped in markdown and doesn't look like JSON, it might be an error or unexpected format.
+                // For now, we return it as is, but this could be a point for more robust error handling.
+                System.Diagnostics.Debug.WriteLine($"Warning (GetTableSchemaFromGemini): Response doesn't appear to be clean JSON or markdown-wrapped JSON: {jsonResult}");
+            }
+
+            if (string.IsNullOrWhiteSpace(jsonResult))
+            {
+                throw new Exception("Extracted JSON string is empty or invalid after attempting to clean response from GetTableSchemaFromGemini.");
+            }
+
+            return jsonResult;
+        }
     }
 }
