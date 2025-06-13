@@ -129,7 +129,13 @@ Your Response MUST be a JSON object with the following exact structure and keys:
 
         public async Task<string> GetTableSchemaFromGemini(string sqlScript, string modelName)
         {
-            string prompt = $"Based on the following SQL script, return a JSON object describing the tables involved. The JSON should be an array where each object has 'tableName', and an array of 'columns' with 'columnName' and 'dataType' (use Oracle types like VARCHAR2, NUMBER, DATE). SQL Script: {sqlScript}";
+            string prompt = @"Based on the following SQL script, return a JSON object describing the tables involved. 
+The JSON must be an array where each object has 'tableName' and an array of 'columns' with 'columnName' and 'dataType' (use Oracle types like VARCHAR2, NUMBER, DATE).
+For each 'tableName', you MUST provide the fully qualified name, including the schema (e.g., 'MYSCHEMA.MYTABLE'). If a table is used without a schema in the script, you must still identify and include its correct schema in the response.
+This is critical to avoid 'table not found' errors during testing.
+SQL Script: {sqlScript}";
+
+            prompt = prompt.Replace("{sqlScript}", sqlScript);
 
             var requestBody = new
             {

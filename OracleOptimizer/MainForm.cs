@@ -18,6 +18,34 @@ namespace OracleOptimizer
             hostTextBox.Text = "dev5-mer-db:1521/TCTN_MASTER";
             userTextBox.Text = "cisconvert";
             passwordTextBox.Text = "cisconvert";
+            geminiApiKeyTextBox.Text = "AIzaSyCejA2q9u3nieoSxQX9RpJsWMIJWGKDN7I";
+            procedureBodyTextBox.Text = @"
+PROCEDURE AR_Recapture_w_CR IS
+   --  Purpose: Identify AR Recapture IDs that have a Credit (such as overpmtcr) invoice included.
+   --  JME    1.11.16    Per TT134621 - Created Procedure
+   vResultsRec                  daily_validation%ROWTYPE;
+   CURSOR GetARRecapturewCRCur
+     IS
+     select a.accountno, a.ar_recapture_id from cisdata.ar_recapture_master a, cisdata.ar_recapture_invoice_master a2
+       where a.status = 'ACTIVE' and a.ar_recapture_id = a2.ar_recapture_id
+       and a2.balance < 0
+       group by a.accountno, a.ar_recapture_id;
+   BEGIN
+           LogStatus('AR_Recapture_w_CR', 'Started at ' || TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MI:SS'));
+           PrintOut('Start of AR_Recapture_w_CR');
+     FOR GetARRecapturewCRRec IN GetARRecapturewCRCur LOOP
+         vResultsRec.Validation := 'AR_Recapture_w_CR';
+               vResultsRec.AccountNo  := GetARRecapturewCRRec.accountno;
+         vResultsRec.Results    := 'The AR Recapture Invoice Master for Account '||GetARRecapturewCRRec.accountno|| ', AR Recapture ID '|| GetARRecapturewCRRec.ar_recapture_id || ' includes a credit invoice';
+         LogResults(vResultsRec);
+           END LOOP;
+           PrintOut('End of AR_Recapture_w_CR');
+           LogStatus('AR_Recapture_w_CR', 'Ended at ' || TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MI:SS'));
+ EXCEPTION
+   WHEN OTHERS THEN
+            LogError('AR_Recapture_w_CR', SQLCODE, SQLERRM);
+   END AR_Recapture_w_CR;
+".Trim();
             // Attach the event handler for the button click
             analyzeButton.Click += analyzeButton_Click;
         }
@@ -31,160 +59,7 @@ namespace OracleOptimizer
 
             try
             {
-                if (useLogicTestCheckBox.Checked)
-                {
-                    await ExecuteLogicTestAsync();
-                }
-                else if (usePerfTestCheckBox.Checked)
-                {
-                    await ExecutePerformanceTestAsync();
-                }
-                else
-                {
-                    // Helper function to reliably extract the first executable SQL statement from a string
-                    // that might contain comments and multiple queries.
-                    Func<string, string> extractFirstQuery = (rawSql) =>
-                    {
-                        if (string.IsNullOrWhiteSpace(rawSql)) return string.Empty;
-                        var noComments = System.Text.RegularExpressions.Regex.Replace(rawSql, @"--.*", "");
-                        var statements = noComments.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-                        foreach (var stmt in statements)
-                        {
-                            if (!string.IsNullOrWhiteSpace(stmt))
-                            {
-                                return stmt.Trim();
-                            }
-                        }
-                        return string.Empty;
-                    };
-
-                    string host = hostTextBox.Text;
-                    string user = userTextBox.Text;
-                    string password = passwordTextBox.Text;
-                    string apiKey = geminiApiKeyTextBox.Text;
-                    string procedure = procedureBodyTextBox.Text;
-                    string modelName = geminiModelTextBox.Text;
-
-                    if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(procedure))
-                    {
-                        statusLabel.Text = "Error: All input fields, including API Key and Procedure, are required for optimization.";
-                        return;
-                    }
-
-                    statusLabel.Text = "Analyzing with Gemini for optimization...";
-                    optimizedProcedureTextBox.Text = ""; // Clear previous optimized procedure
-                    reportTextBox.Text = ""; // Clear previous report
-
-                    var geminiService = new GeminiService(apiKey);
-                    var oracleService = new OracleService();
-                    string connectionString = $"Data Source={host};User Id={user};Password={password};Connection Timeout=60;";
-
-                    System.Diagnostics.Debug.WriteLine($"Attempting to connect to database: {host}");
-                    File.AppendAllText("log.txt", $"Attempting to connect to database: {host}\n");
-
-                    var geminiResponse = await geminiService.AnalyzeSqlAsync(procedure, modelName);
-                    if (geminiResponse == null || string.IsNullOrWhiteSpace(geminiResponse.ValidationQueryBefore) || string.IsNullOrWhiteSpace(geminiResponse.OptimizedProcedureBody) || string.IsNullOrWhiteSpace(geminiResponse.ValidationQueryAfter))
-                    {
-                        throw new Exception("Gemini did not return a valid or complete test plan. Check the procedure and try again.");
-                    }
-
-                    System.Diagnostics.Debug.WriteLine($"Gemini Response: {JsonConvert.SerializeObject(geminiResponse)}");
-                    File.AppendAllText("log.txt", $"Gemini Response: {JsonConvert.SerializeObject(geminiResponse)}\n");
-                    System.Diagnostics.Debug.WriteLine($"Using API Key: {apiKey}");
-                    File.AppendAllText("log.txt", $"Using API Key: {apiKey}\n");
-
-                    reportTextBox.Text = geminiResponse.Explanation;
-                    optimizedProcedureTextBox.Text = geminiResponse.OptimizedProcedureBody;
-                    resultsTabControl.SelectedTab = geminiReportTab;
-                    statusLabel.Text = "Gemini analysis complete. Getting 'before' snapshot...";
-
-                    string beforeQuery = extractFirstQuery(geminiResponse.ValidationQueryBefore);
-                    if (string.IsNullOrEmpty(beforeQuery))
-                    {
-                        throw new Exception("Could not find a valid 'before' validation query in the Gemini response.");
-                    }
-
-                    long beforeTime = long.MaxValue;
-                    DataTable beforeData = new DataTable();
-                    const int WARMUP_RUNS = 3;
-
-                    for (int i = 0; i < WARMUP_RUNS; i++)
-                    {
-                        var sw = System.Diagnostics.Stopwatch.StartNew();
-                        if (i == WARMUP_RUNS - 1)
-                        {
-                            beforeData = await oracleService.ExecuteQueryAsync(connectionString, beforeQuery);
-                        }
-                        else
-                        {
-                            await oracleService.ExecuteQueryAsync(connectionString, beforeQuery);
-                        }
-                        sw.Stop();
-                        if (sw.ElapsedMilliseconds < beforeTime)
-                        {
-                            beforeTime = sw.ElapsedMilliseconds;
-                        }
-                    }
-                    statusLabel.Text = $"'Before' snapshot complete (Best of {WARMUP_RUNS}: {beforeTime}ms). Executing in transaction...";
-                    System.Diagnostics.Debug.WriteLine($"Before Data: {JsonConvert.SerializeObject(beforeData)}");
-                    File.AppendAllText("log.txt", $"Before Data: {JsonConvert.SerializeObject(beforeData)}\n");
-
-                    using (var connection = new OracleConnection(connectionString))
-                    {
-                        await connection.OpenAsync();
-                        using (var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted))
-                        {
-                            try
-                            {
-                                var sw = System.Diagnostics.Stopwatch.StartNew();
-                                string procedureBodyToExecute = geminiResponse.OptimizedProcedureBody.Trim();
-                                var regex = new System.Text.RegularExpressions.Regex(@"\A\s*PROCEDURE\s+.*?(\s+IS|\s+AS)\s+", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
-                                string executableBlock = regex.Replace(procedureBodyToExecute, "DECLARE\n", 1);
-                                regex = new System.Text.RegularExpressions.Regex(@"END\s+.*?;", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.RightToLeft);
-                                executableBlock = regex.Replace(executableBlock, "END;", 1);
-                                executableBlock = System.Text.RegularExpressions.Regex.Replace(executableBlock, @"LogError\(.*?\);", "RAISE;", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
-                                executableBlock = System.Text.RegularExpressions.Regex.Replace(executableBlock, @"^\s*(LogStatus|PrintOut)\(.*\);", "NULL;", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Multiline);
-
-                                await oracleService.ExecuteNonQueryAsync(connection, transaction, executableBlock);
-
-                                string afterQuery = extractFirstQuery(geminiResponse.ValidationQueryAfter);
-                                if (string.IsNullOrEmpty(afterQuery))
-                                {
-                                    throw new Exception("Could not find a valid 'after' validation query in the Gemini response.");
-                                }
-                                afterQuery = System.Text.RegularExpressions.Regex.Replace(afterQuery, @"\s+AND\s+.*?log_timestamp.*?(?=\s+ORDER BY|\s*$)", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
-
-                                DataTable afterData = await oracleService.ExecuteQueryWithinTransactionAsync(connection, transaction, afterQuery);
-                                sw.Stop();
-                                long afterTime = sw.ElapsedMilliseconds;
-
-                                statusLabel.Text = "Transaction complete. Validating data...";
-                                System.Diagnostics.Debug.WriteLine($"After Data: {JsonConvert.SerializeObject(afterData)}");
-                                File.AppendAllText("log.txt", $"After Data: {JsonConvert.SerializeObject(afterData)}\n");
-
-                                bool areIdentical = DataTableComparator.AreIdentical(beforeData, afterData, out string comparisonDetails);
-                                if (areIdentical)
-                                {
-                                    transaction.Commit();
-                                    statusLabel.Text = "PASS: Validation successful. Changes have been committed.";
-                                    performanceLabel.Text = $"Original Query Time: {beforeTime}ms\nOptimized Execution Time: {afterTime}ms\n\nValidation Details:\n{comparisonDetails}";
-                                }
-                                else
-                                {
-                                    transaction.Rollback();
-                                    statusLabel.Text = "FAIL: Validation failed. Changes have been rolled back.";
-                                    performanceLabel.Text = $"Original Query Time: {beforeTime}ms\nOptimized Execution Time: {afterTime}ms\n\nValidation Details:\n{comparisonDetails}";
-                                }
-                                resultsTabControl.SelectedTab = performanceTab;
-                            }
-                            catch (Exception txEx)
-                            {
-                                transaction.Rollback();
-                                throw new Exception("Error during transaction. Changes have been rolled back.", txEx);
-                            }
-                        }
-                    }
-                }
+                await ExecuteAnalysisAndTestingAsync();
             }
             catch (OracleException oraEx) when (oraEx.Message.Contains("ORA-50000") || oraEx.Message.Contains("ORA-12170") || oraEx.Message.Contains("ORA-01017"))
             {
@@ -213,255 +88,232 @@ namespace OracleOptimizer
             }
         }
 
-        private async Task ExecutePerformanceTestAsync()
+        private async Task ExecuteAnalysisAndTestingAsync()
         {
-            statusLabel.Text = "Starting Performance Test...";
-            performanceLabel.Text = "Measuring...";
-            reportTextBox.Text = ""; // Clear report text box for new results
-            resultsTabControl.SelectedTab = performanceTab; // Switch to performance tab
+            const int TEST_ROW_COUNT = 1000;
+            Func<string, string> convertProcedureToExecutableBlock = (procedureBody) =>
+            {
+                string executableBlock = procedureBody.Trim();
+                var regex = new System.Text.RegularExpressions.Regex(@"\A\s*PROCEDURE\s+.*?(\s+IS|\s+AS)\s+", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+                executableBlock = regex.Replace(executableBlock, "DECLARE\n", 1);
+                regex = new System.Text.RegularExpressions.Regex(@"END\s+.*?;", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.RightToLeft);
+                executableBlock = regex.Replace(executableBlock, "END;", 1);
+                return executableBlock;
+            };
 
-            string originalSqlScript = procedureBodyTextBox.Text;
-            string optimizedSqlScript = optimizedProcedureTextBox.Text; // This is the "after" script
-            string apiKey = geminiApiKeyTextBox.Text;
-            string modelName = geminiModelTextBox.Text;
             string host = hostTextBox.Text;
             string user = userTextBox.Text;
             string password = passwordTextBox.Text;
-            int currentPerfTestRowCount = (int)perfTestRowCount.Value;
+            string apiKey = geminiApiKeyTextBox.Text;
+            string originalProcedure = procedureBodyTextBox.Text;
+            string modelName = geminiModelTextBox.Text;
 
-            if (string.IsNullOrWhiteSpace(originalSqlScript))
+            if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(originalProcedure))
             {
-                statusLabel.Text = "Performance Test Aborted: Original SQL script is empty.";
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(optimizedSqlScript))
-            {
-                statusLabel.Text = "Performance Test Aborted: Optimized SQL script is empty.";
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                statusLabel.Text = "Performance Test Aborted: Gemini API Key is empty.";
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(password))
-            {
-                statusLabel.Text = "Performance Test Aborted: Database connection details are incomplete.";
+                statusLabel.Text = "Error: All input fields, including API Key and Procedure, are required.";
                 return;
             }
 
-            var geminiService = new GeminiService(apiKey); // Instantiate outside using block for broader scope if needed for schema
+            statusLabel.Text = "1/5: Analyzing with Gemini for optimization...";
+            optimizedProcedureTextBox.Text = "";
+            reportTextBox.Text = "";
+
+            var geminiService = new GeminiService(apiKey);
+            var geminiResponse = await geminiService.AnalyzeSqlAsync(originalProcedure, modelName);
+            if (geminiResponse == null || string.IsNullOrWhiteSpace(geminiResponse.OptimizedProcedureBody) || string.IsNullOrWhiteSpace(geminiResponse.ValidationQueryAfter))
+            {
+                throw new Exception("Gemini did not return a valid or complete test plan.");
+            }
+
+            reportTextBox.Text = geminiResponse.Explanation;
+            optimizedProcedureTextBox.Text = geminiResponse.OptimizedProcedureBody;
+            resultsTabControl.SelectedTab = geminiReportTab;
+
+            statusLabel.Text = "2/5: Getting table schema for testing...";
+            string geminiSchemaJson = await geminiService.GetTableSchemaFromGemini(originalProcedure, modelName);
+            if (string.IsNullOrWhiteSpace(geminiSchemaJson) || geminiSchemaJson.StartsWith("-- Error"))
+            {
+                throw new Exception($"Failed to get table schema from Gemini. Response: {geminiSchemaJson}");
+            }
+
+            statusLabel.Text = "3/5: Running Original Procedure...";
             var oracleService = new OracleService();
-            string connectionString = $"Data Source={host};User Id={user};Password={password};Connection Timeout=60;"; // Longer timeout for potentially long operations
+            string connectionString = $"Data Source={host};User Id={user};Password={password};Connection Timeout=120;";
+            string testDataPlSql = GenerateInsertStatements(geminiSchemaJson, TEST_ROW_COUNT, out List<string> tableNamesToTruncate);
 
-            long originalTimeMs = -1;
-            long optimizedTimeMs = -1;
+            string originalExecutableBlock = convertProcedureToExecutableBlock(originalProcedure);
+            (DataTable originalData, long originalTime) = await RunProcedureAndGetDataAsync(oracleService, connectionString, testDataPlSql, tableNamesToTruncate, originalExecutableBlock, geminiResponse.ValidationQueryAfter);
 
-            using OracleConnection connection = new OracleConnection(connectionString);
-            try
+            statusLabel.Text = "4/5: Running Optimized Procedure...";
+            string optimizedExecutableBlock = convertProcedureToExecutableBlock(geminiResponse.OptimizedProcedureBody);
+            (DataTable optimizedData, long optimizedTime) = await RunProcedureAndGetDataAsync(oracleService, connectionString, testDataPlSql, tableNamesToTruncate, optimizedExecutableBlock, geminiResponse.ValidationQueryAfter);
+
+            statusLabel.Text = "5/5: Comparing results...";
+            bool areIdentical = DataTableComparator.AreIdentical(originalData, optimizedData, out string comparisonDetails);
+
+            string finalReport = (areIdentical ? "✅ LOGIC TEST PASSED" : "❌ LOGIC TEST FAILED") + "\n\n" +
+                                 $"PERFORMANCE:\n" +
+                                 $"- Original:    {originalTime}ms\n" +
+                                 $"- Optimized:   {optimizedTime}ms\n" +
+                                 $"- Improvement: {originalTime - optimizedTime}ms\n\n" +
+                                 $"VALIDATION DETAILS:\n{comparisonDetails}";
+
+            performanceLabel.Text = finalReport;
+            resultsTabControl.SelectedTab = performanceTab;
+            statusLabel.Text = "Analysis and Testing Complete.";
+        }
+
+        private async Task ClearTablesAsync(OracleService oracleService, OracleConnection connection, OracleTransaction transaction, List<string> tableNames)
+        {
+            // 1. Normalize table names and prepare for query
+            var uniqueTableNames = new HashSet<string>(tableNames.Select(t => t.ToUpperInvariant()));
+            var connectionStringBuilder = new OracleConnectionStringBuilder(connection.ConnectionString);
+            string currentUser = connectionStringBuilder.UserID.ToUpper();
+
+            var parsedTables = uniqueTableNames.Select(fullTableName =>
             {
-                await connection.OpenAsync();
-                using OracleTransaction transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
-                try
+                string[] parts = fullTableName.Split('.');
+                string owner = parts.Length > 1 ? parts[0] : currentUser;
+                string tableName = parts.Length > 1 ? parts[1] : parts[0];
+                return (owner, tableName, fullTableName);
+            }).ToList();
+
+            var tableLookup = parsedTables.ToDictionary(t => (t.owner, t.tableName), t => t.fullTableName);
+
+            // 2. Query for dependencies among the specified tables
+            var dependencies = new Dictionary<string, HashSet<string>>(); // Key: Parent, Value: Set of Children
+
+            var whereClauses = new List<string>();
+            var parameters = new List<OracleParameter>();
+            int i = 0;
+            foreach (var (owner, tableName, _) in parsedTables)
+            {
+                whereClauses.Add($"(a.owner = :p_owner{i} AND a.table_name = :p_table_name{i})");
+                parameters.Add(new OracleParameter($"p_owner{i}", owner));
+                parameters.Add(new OracleParameter($"p_table_name{i}", tableName));
+                i++;
+            }
+
+            if (whereClauses.Count > 0)
+            {
+                string sql = $@"
+                    SELECT a.owner, a.table_name, r.owner AS r_owner, r.table_name AS r_table_name
+                    FROM all_constraints a
+                    JOIN all_constraints r ON a.r_constraint_name = r.constraint_name AND a.r_owner = r.owner
+                    WHERE a.constraint_type = 'R'
+                    AND ({string.Join(" OR ", whereClauses)})";
+
+                using (var cmd = new OracleCommand(sql, connection))
                 {
-                    statusLabel.Text = "Perf Test: Getting table schema...";
-                    string geminiSchemaJson = await geminiService.GetTableSchemaFromGemini(originalSqlScript, modelName);
-                    if (string.IsNullOrWhiteSpace(geminiSchemaJson) || geminiSchemaJson.StartsWith("-- Error"))
+                    cmd.Transaction = transaction;
+                    cmd.Parameters.AddRange(parameters.ToArray());
+                    using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        throw new Exception($"Failed to get table schema from Gemini. Response: {geminiSchemaJson}");
+                        while (await reader.ReadAsync())
+                        {
+                            var childOwner = reader.GetString(0).ToUpper();
+                            var childTable = reader.GetString(1).ToUpper();
+                            var parentOwner = reader.GetString(2).ToUpper();
+                            var parentTable = reader.GetString(3).ToUpper();
+
+                            if (tableLookup.TryGetValue((childOwner, childTable), out var childFullName) &&
+                                tableLookup.TryGetValue((parentOwner, parentTable), out var parentFullName))
+                            {
+                                if (!dependencies.ContainsKey(parentFullName))
+                                {
+                                    dependencies[parentFullName] = new HashSet<string>();
+                                }
+                                dependencies[parentFullName].Add(childFullName);
+                            }
+                        }
                     }
-
-                    statusLabel.Text = "Perf Test: Generating insert statements...";
-                    string plSqlInsertBlock = GenerateInsertStatements(geminiSchemaJson, currentPerfTestRowCount, out _); // tableNames out param not strictly needed here
-                    if (string.IsNullOrWhiteSpace(plSqlInsertBlock) || plSqlInsertBlock.StartsWith("-- Error"))
-                    {
-                        throw new Exception($"Failed to generate insert statements. Response: {plSqlInsertBlock}");
-                    }
-
-                    statusLabel.Text = "Perf Test: Inserting temporary data...";
-                    System.Diagnostics.Debug.WriteLine($"Executing Insert PL/SQL Block:\n{plSqlInsertBlock}");
-                    await oracleService.ExecuteNonQueryAsync(connection, transaction, plSqlInsertBlock);
-                    statusLabel.Text = "Perf Test: Temporary data inserted.";
-
-                    // Execute Original Script
-                    statusLabel.Text = "Perf Test: Executing original script...";
-                    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                    System.Diagnostics.Debug.WriteLine($"Executing Original Script (Perf Test):\n{originalSqlScript}");
-                    await oracleService.ExecuteNonQueryAsync(connection, transaction, originalSqlScript);
-                    stopwatch.Stop();
-                    originalTimeMs = stopwatch.ElapsedMilliseconds;
-                    statusLabel.Text = "Perf Test: Original script executed.";
-
-                    // Execute Optimized Script
-                    statusLabel.Text = "Perf Test: Executing optimized script...";
-                    stopwatch.Restart();
-                    System.Diagnostics.Debug.WriteLine($"Executing Optimized Script (Perf Test):\n{optimizedSqlScript}");
-                    await oracleService.ExecuteNonQueryAsync(connection, transaction, optimizedSqlScript);
-                    stopwatch.Stop();
-                    optimizedTimeMs = stopwatch.ElapsedMilliseconds;
-                    statusLabel.Text = "Perf Test: Optimized script executed.";
-
-                    statusLabel.Text = "Perf Test: Rolling back temporary data...";
-                    await transaction.RollbackAsync(); // Use RollbackAsync
-                    statusLabel.Text = "Performance Test: Completed. All temporary data rolled back.";
-
-                    performanceLabel.Text = $"Original: {originalTimeMs / 1000.0:F2}s, Optimized: {optimizedTimeMs / 1000.0:F2}s";
-                    reportTextBox.Text = $"Performance Test Results (with {currentPerfTestRowCount} rows):\n" +
-                                         $"- Original Script Execution Time: {originalTimeMs} ms ({originalTimeMs / 1000.0:F2}s)\n" +
-                                         $"- Optimized Script Execution Time: {optimizedTimeMs} ms ({optimizedTimeMs / 1000.0:F2}s)\n\n" +
-                                         "All changes involving temporary data have been rolled back.";
-                    resultsTabControl.SelectedTab = performanceTab;
-
-                }
-                catch (Exception dbEx) // Catches errors during DB operations within transaction
-                {
-                    if (transaction?.Connection != null) // Check if transaction is still valid before trying to rollback
-                    {
-                        try { await transaction.RollbackAsync(); } // Use RollbackAsync
-                        catch (Exception rbEx) { System.Diagnostics.Debug.WriteLine($"Rollback failed: {rbEx.Message}"); }
-                    }
-                    statusLabel.Text = $"Performance Test Failed (DB Operation): {dbEx.Message}";
-                    reportTextBox.Text = $"Performance Test Database Operation Error:\n{dbEx.ToString()}";
-                    resultsTabControl.SelectedTab = geminiReportTab; // Show error in report tab
-                    System.Diagnostics.Debug.WriteLine($"Error during ExecutePerformanceTestAsync DB ops: {dbEx}");
-                    File.AppendAllText("log.txt", $"Error during ExecutePerformanceTestAsync DB ops: {dbEx}\n");
                 }
             }
-            catch (Exception ex) // Catches errors in setup (connection, API calls before transaction)
+
+            // 3. Topological Sort (Kahn's algorithm) to determine deletion order
+            var sortedList = new List<string>();
+            var inDegree = uniqueTableNames.ToDictionary(t => t, t => 0);
+            var graph = uniqueTableNames.ToDictionary(t => t, t => new HashSet<string>()); // Child -> Set of Parents
+
+            foreach (var parent in dependencies.Keys)
             {
-                statusLabel.Text = $"Performance Test Failed (Setup): {ex.Message}";
-                reportTextBox.Text = $"Performance Test Setup Error:\n{ex.ToString()}";
-                resultsTabControl.SelectedTab = geminiReportTab; // Show error in report tab
-                System.Diagnostics.Debug.WriteLine($"Error in ExecutePerformanceTestAsync setup: {ex}");
-                File.AppendAllText("log.txt", $"Error in ExecutePerformanceTestAsync setup: {ex}\n");
+                foreach (var child in dependencies[parent])
+                {
+                    if (uniqueTableNames.Contains(child) && uniqueTableNames.Contains(parent))
+                    {
+                        if (graph[child].Add(parent))
+                        {
+                            inDegree[parent]++;
+                        }
+                    }
+                }
             }
-            finally
+
+            var queue = new Queue<string>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+
+            while (queue.Count > 0)
             {
-                 if (connection?.State == ConnectionState.Open)
-                 {
-                    await connection.CloseAsync();
-                 }
+                var node = queue.Dequeue();
+                sortedList.Add(node);
+
+                if (graph.TryGetValue(node, out var neighbors))
+                {
+                    foreach (var neighbor in neighbors)
+                    {
+                        inDegree[neighbor]--;
+                        if (inDegree[neighbor] == 0)
+                        {
+                            queue.Enqueue(neighbor);
+                        }
+                    }
+                }
+            }
+
+            if (sortedList.Count < uniqueTableNames.Count)
+            {
+                var missing = string.Join(", ", uniqueTableNames.Except(sortedList));
+                throw new Exception($"Cyclic dependency detected among tables, cannot determine deletion order. Problematic tables might include: {missing}");
+            }
+
+            // 4. Clear table data respecting foreign keys
+            foreach (var table in sortedList)
+            {
+                await oracleService.ExecuteNonQueryAsync(connection, transaction, $"DELETE FROM {table}");
             }
         }
 
-        private async Task ExecuteLogicTestAsync()
+        private async Task<(DataTable results, long time)> RunProcedureAndGetDataAsync(
+            OracleService oracleService, string connectionString, string testDataPlSql,
+            List<string> tablesToTruncate, string procedureExecutableBlock, string validationQuery)
         {
-            statusLabel.Text = "Starting Logic Test...";
-            performanceLabel.Text = "N/A (Logic Test)"; // Performance metrics are not applicable
-            // reportTextBox.Text = ""; // Clear report text box for new comparison details
-
-            string originalSqlScript = procedureBodyTextBox.Text;
-            string optimizedSqlScript = optimizedProcedureTextBox.Text; // This is the "after" script
-            string apiKey = geminiApiKeyTextBox.Text;
-            string modelName = geminiModelTextBox.Text;
-            string host = hostTextBox.Text;
-            string user = userTextBox.Text;
-            string password = passwordTextBox.Text;
-            int currentLogicTestRowCount = (int)logicTestRowCount.Value;
-
-            if (string.IsNullOrWhiteSpace(originalSqlScript))
-            {
-                statusLabel.Text = "Logic Test Aborted: Original SQL script is empty.";
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(optimizedSqlScript))
-            {
-                statusLabel.Text = "Logic Test Aborted: Optimized SQL script (for 'after' state) is empty.";
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                statusLabel.Text = "Logic Test Aborted: Gemini API Key is empty.";
-                return;
-            }
-             if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(password))
-            {
-                statusLabel.Text = "Logic Test Aborted: Database connection details are incomplete.";
-                return;
-            }
+            using var connection = new OracleConnection(connectionString);
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
 
             try
             {
-                var geminiService = new GeminiService(apiKey);
-                var oracleService = new OracleService();
-                // Using a shorter timeout for CTE queries as they should be local once the CTE is built.
-                string connectionString = $"Data Source={host};User Id={user};Password={password};Connection Timeout=30;";
+                // Clear tables in the correct order for deletion
+                await ClearTablesAsync(oracleService, connection, transaction, tablesToTruncate);
 
-
-                statusLabel.Text = "Logic Test: Getting table schema from Gemini...";
-                string geminiSchemaJson = await geminiService.GetTableSchemaFromGemini(originalSqlScript, modelName);
-
-                if (string.IsNullOrWhiteSpace(geminiSchemaJson) || geminiSchemaJson.StartsWith("-- Error"))
+                // Insert fresh data for the test run
+                if (!string.IsNullOrWhiteSpace(testDataPlSql))
                 {
-                    statusLabel.Text = "Logic Test Failed: Could not get table schema. Check Gemini response.";
-                    reportTextBox.Text = geminiSchemaJson; // Show error from Gemini if any
-                    resultsTabControl.SelectedTab = geminiReportTab;
-                    return;
+                    await oracleService.ExecuteNonQueryAsync(connection, transaction, testDataPlSql);
                 }
 
-                statusLabel.Text = "Logic Test: Generating fake data CTE...";
-                string fakeDataCte = GenerateFakeDataCte(geminiSchemaJson, currentLogicTestRowCount);
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                await oracleService.ExecuteNonQueryAsync(connection, transaction, procedureExecutableBlock);
+                stopwatch.Stop();
 
-                if (string.IsNullOrWhiteSpace(fakeDataCte) || fakeDataCte.StartsWith("-- Error"))
-                {
-                    statusLabel.Text = "Logic Test Failed: Could not generate fake data CTE.";
-                    reportTextBox.Text = fakeDataCte; // Show error from CTE generation if any
-                    resultsTabControl.SelectedTab = geminiReportTab;
-                    return;
-                }
+                var dataTable = await oracleService.ExecuteQueryWithinTransactionAsync(connection, transaction, validationQuery);
 
-                string validationQueryBeforeWithCte = fakeDataCte + "\n" + originalSqlScript;
-                string validationQueryAfterWithCte = fakeDataCte + "\n" + optimizedSqlScript;
-
-                // For debugging:
-                System.Diagnostics.Debug.WriteLine("--- Logic Test: Before Query with CTE ---");
-                System.Diagnostics.Debug.WriteLine(validationQueryBeforeWithCte);
-                System.Diagnostics.Debug.WriteLine("--- Logic Test: After Query with CTE ---");
-                System.Diagnostics.Debug.WriteLine(validationQueryAfterWithCte);
-
-                DataTable dataTableBefore;
-                DataTable dataTableAfter;
-
-                using (OracleConnection connection = new OracleConnection(connectionString))
-                {
-                    await connection.OpenAsync();
-                    statusLabel.Text = "Logic Test: Executing 'before' script with fake data...";
-                    dataTableBefore = await oracleService.ExecuteQueryWithinTransactionAsync(connection, null, validationQueryBeforeWithCte);
-
-                    statusLabel.Text = "Logic Test: Executing 'after' script with fake data...";
-                    dataTableAfter = await oracleService.ExecuteQueryWithinTransactionAsync(connection, null, validationQueryAfterWithCte);
-                    // Connection will be closed by the using statement
-                }
-
-                statusLabel.Text = "Logic Test: Comparing results...";
-                bool areIdentical = DataTableComparator.AreIdentical(dataTableBefore, dataTableAfter, out string comparisonDetails);
-
-                reportTextBox.Text = $"Logic Test Comparison Details:\n{comparisonDetails}";
-                resultsTabControl.SelectedTab = geminiReportTab; // Show comparison details in the report tab
-
-                if (areIdentical)
-                {
-                    statusLabel.Text = "Logic Test: Passed. Results are identical.";
-                }
-                else
-                {
-                    statusLabel.Text = "Logic Test: Failed. Results differ.";
-                }
+                await transaction.RollbackAsync(); // Rollback all changes (deletes, inserts, procedure effects)
+                return (dataTable, stopwatch.ElapsedMilliseconds);
             }
-            catch (OracleException oraEx)
+            catch
             {
-                statusLabel.Text = $"Logic Test Oracle Error: {oraEx.Message}.";
-                reportTextBox.Text = $"Logic Test Oracle Error:\n{oraEx.ToString()}";
-                resultsTabControl.SelectedTab = geminiReportTab;
-                File.AppendAllText("log.txt", $"Logic Test Oracle Error: {oraEx}\n");
-            }
-            catch (Exception ex)
-            {
-                statusLabel.Text = $"Logic Test Failed: {ex.Message}";
-                reportTextBox.Text = $"Logic Test Exception:\n{ex.ToString()}";
-                resultsTabControl.SelectedTab = geminiReportTab;
-                System.Diagnostics.Debug.WriteLine($"Error in ExecuteLogicTestAsync: {ex}");
-                File.AppendAllText("log.txt", $"Error in ExecuteLogicTestAsync: {ex}\n");
+                await transaction.RollbackAsync();
+                throw;
             }
         }
 
@@ -516,117 +368,74 @@ namespace OracleOptimizer
                 return $"-- Error parsing JSON schema: {ex.Message}\n";
             }
 
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("WITH");
-
-            for (int tableIdx = 0; tableIdx < tableSchemas.Count; tableIdx++)
+            var cteParts = new List<string>();
+            foreach (var table in tableSchemas)
             {
-                TableSchema table = tableSchemas[tableIdx];
                 if (table.Columns == null || table.Columns.Count == 0)
                 {
                     System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Table {table.TableName} has no columns, skipping.");
                     continue; // Skip this table if it has no columns
                 }
 
-                sb.AppendLine($"  {table.TableName}_fake AS (");
+                var sbCte = new StringBuilder();
+                sbCte.AppendLine($"  {table.TableName}_fake AS (");
 
                 for (int i = 1; i <= rowCount; i++)
                 {
-                    sb.Append("    SELECT ");
+                    sbCte.Append("    SELECT ");
                     for (int colIdx = 0; colIdx < table.Columns.Count; colIdx++)
                     {
                         ColumnSchema column = table.Columns[colIdx];
                         string generatedValue;
                         string? colDataTypeUpper = column.DataType?.ToUpperInvariant();
 
-                        if (colDataTypeUpper == null) {
+                        if (colDataTypeUpper == null)
+                        {
                             generatedValue = "NULL";
                         }
                         else if (colDataTypeUpper.StartsWith("VARCHAR2") || colDataTypeUpper.StartsWith("VARCHAR") || colDataTypeUpper.StartsWith("CHAR") || colDataTypeUpper.StartsWith("NVARCHAR2"))
                         {
-                            // Using a simple concatenation with table, column, and row index for uniqueness and traceability
-                            // Ensure column and table names are not null before trying to Substring
                             string tableNamePart = table.TableName != null ? table.TableName.Substring(0, Math.Min(table.TableName.Length, 3)) : "TAB";
                             string colNamePart = column.ColumnName != null ? column.ColumnName.Substring(0, Math.Min(column.ColumnName.Length, 3)) : "COL";
                             generatedValue = $"'Val_{tableNamePart}_{colNamePart}_{i}'";
                         }
                         else if (colDataTypeUpper.StartsWith("NUMBER") || colDataTypeUpper.StartsWith("INTEGER") || colDataTypeUpper.StartsWith("INT") || colDataTypeUpper.StartsWith("DECIMAL") || colDataTypeUpper.StartsWith("FLOAT"))
                         {
-                            // Using a simple row index, easily predictable for testing
                             generatedValue = $"{i}";
                         }
                         else if (colDataTypeUpper.StartsWith("DATE"))
                         {
-                            // Generating a sequence of dates starting from SYSDATE - rowCount days ago up to SYSDATE - 1 day ago
                             generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + {i - 1}";
                         }
                         else
                         {
-                            generatedValue = "NULL"; // Default for unknown types
+                            generatedValue = "NULL";
                             System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
                         }
 
-                        sb.Append($"{generatedValue} AS \"{column.ColumnName}\""); // Enclose column name in quotes
+                        sbCte.Append($"{generatedValue} AS \"{column.ColumnName}\"");
 
                         if (colIdx < table.Columns.Count - 1)
                         {
-                            sb.Append(", ");
+                            sbCte.Append(", ");
                         }
                     }
-                    sb.AppendLine(" FROM DUAL");
+                    sbCte.AppendLine(" FROM DUAL");
                     if (i < rowCount)
                     {
-                        sb.AppendLine("  UNION ALL");
+                        sbCte.AppendLine("  UNION ALL");
                     }
                 }
-                sb.Append("  )"); // End of current fake table CTE definition
-
-                if (tableIdx < tableSchemas.Count - 1)
-                {
-                    // Check if there's actually a next table to prevent trailing comma after last valid table.
-                    // This check is a bit simplistic if some tables might be skipped.
-                    // A better way would be to build a list of valid CTEs and then join them.
-                    // For now, this assumes all tables in schema are processed.
-                    sb.AppendLine(",");
-                }
-                else
-                {
-                    sb.AppendLine(); // Newline after the last CTE block
-                }
+                sbCte.Append("  )");
+                cteParts.Add(sbCte.ToString());
             }
 
-            // A more robust way to handle trailing commas if tables could be skipped:
-            // Remove last comma if string ends with ",\n" or ",\r\n"
-            string result = sb.ToString();
-            if (result.EndsWith(",\n"))
+            if (cteParts.Count == 0)
             {
-                result = result.Substring(0, result.Length - 2) + "\n";
-            }
-            else if (result.EndsWith($",{Environment.NewLine}"))
-            {
-                 result = result.Substring(0, result.Length - (Environment.NewLine.Length + 1)) + Environment.NewLine;
+                return string.Empty; // No CTEs were generated
             }
 
-
-            return result;
-        }
-
-        private string SanitizeForPlSqlIdentifier(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return "default_identifier";
-
-            // Replace non-alphanumeric characters (except underscore) with underscore
-            string sanitized = System.Text.RegularExpressions.Regex.Replace(name, @"[^a-zA-Z0-9_]", "_");
-
-            // Ensure it doesn't start with a number (PL/SQL identifiers cannot)
-            if (char.IsDigit(sanitized[0]))
-            {
-                sanitized = "_" + sanitized;
-            }
-            // Max length for PL/SQL identifiers is typically 30 characters in older Oracle versions, 128c in newer.
-            // Be mindful if very long table/column names are possible. Truncating might be needed.
-            // For now, assume names are reasonably sized or rely on Oracle to handle longer names if supported.
-            return sanitized.Length > 30 ? sanitized.Substring(0, 30) : sanitized; // Basic truncation for safety
+            return "WITH\n" + string.Join(",\n", cteParts) + "\n";
         }
 
         private string SanitizeForPlSqlIdentifier(string? name) // CS8604: Make 'name' parameter nullable
@@ -682,23 +491,23 @@ namespace OracleOptimizer
 
             foreach (TableSchema table in tableSchemas)
             {
-                if (table.Columns == null || table.Columns.Count == 0)
+                if (table.Columns == null || table.Columns.Count == 0 || string.IsNullOrWhiteSpace(table.TableName))
                 {
-                    System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Table {table.TableName} has no columns, skipping for PL/SQL generation.");
+                    System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Table {(table.TableName ?? "[NULL] ")} has no columns or is invalid, skipping for PL/SQL generation.");
                     continue;
                 }
                 string sanitizedTableName = SanitizeForPlSqlIdentifier(table.TableName);
                 // It's important to add the original table name to the list for later use (e.g. TRUNCATE)
-                tableNames.Add($"\"{table.TableName}\"");
+                tableNames.Add(table.TableName);
 
-                sb.AppendLine($"  TYPE T_Fake_{sanitizedTableName}_Rows IS TABLE OF \"{table.TableName}\"%ROWTYPE INDEX BY PLS_INTEGER;");
+                sb.AppendLine($"  TYPE T_Fake_{sanitizedTableName}_Rows IS TABLE OF {table.TableName}%ROWTYPE INDEX BY PLS_INTEGER;");
                 sb.AppendLine($"  V_Fake_{sanitizedTableName}_Data T_Fake_{sanitizedTableName}_Rows;");
             }
             sb.AppendLine("BEGIN");
 
             foreach (TableSchema table in tableSchemas)
             {
-                 if (table.Columns == null || table.Columns.Count == 0)
+                if (table.Columns == null || table.Columns.Count == 0 || string.IsNullOrWhiteSpace(table.TableName))
                 {
                     continue; // Already logged, just skip here
                 }
@@ -718,25 +527,6 @@ namespace OracleOptimizer
                     }
                     else if (columnDataTypeUpper.StartsWith("VARCHAR2") || columnDataTypeUpper.StartsWith("VARCHAR") || columnDataTypeUpper.StartsWith("CHAR") || columnDataTypeUpper.StartsWith("NVARCHAR2"))
                     {
-                        int declaredLength = 30; // Default
-                        if (column.DataType != null && column.DataType.Contains("("))
-                        {
-                            try
-                            {
-                                int startIndex = column.DataType.IndexOf("(") + 1;
-                                int endIndex = column.DataType.IndexOf(")");
-                                if (endIndex > startIndex)
-                                {
-                                    string lenStr = column.DataType.Substring(startIndex, endIndex - startIndex);
-                                    if (int.TryParse(lenStr, out int parsedLength))
-                                    {
-                                        declaredLength = Math.Max(1, Math.Min(parsedLength, 4000)); // Clamp to reasonable Oracle limits
-                                    }
-                                }
-                            }
-                            catch { /* Use default if parsing fails */ }
-                        }
-
                         int declaredLength = 30; // Default
                         if (column.DataType != null && column.DataType.Contains("("))
                         {
@@ -780,9 +570,9 @@ namespace OracleOptimizer
 
                             if (availableLength >= 0) // Need at least 0 for the errPrefix to concatenate with i
                             {
-                                 // Ensure the 'Err_' and 'i' concatenation doesn't exceed declaredLength.
-                                 // This is tricky because 'i' in PL/SQL varies. The check is against maxILength.
-                                 // A simpler robust fallback is to use a very short string or i truncated if possible.
+                                // Ensure the 'Err_' and 'i' concatenation doesn't exceed declaredLength.
+                                // This is tricky because 'i' in PL/SQL varies. The check is against maxILength.
+                                // A simpler robust fallback is to use a very short string or i truncated if possible.
                                 generatedValue = $"'E_' || TO_CHAR(i)"; // Example: E_1, E_100
                                 // Check if this simple fallback itself is too long
                                 // Max length of 'E_' || i is 'E_'.Length + maxILength
@@ -826,15 +616,15 @@ namespace OracleOptimizer
             // After populating all collections, do the inserts
             foreach (TableSchema table in tableSchemas)
             {
-                if (table.Columns == null || table.Columns.Count == 0)
+                if (table.Columns == null || table.Columns.Count == 0 || string.IsNullOrWhiteSpace(table.TableName))
                 {
                     continue; // Skip if no columns
                 }
                 string sanitizedTableName = SanitizeForPlSqlIdentifier(table.TableName);
                 sb.AppendLine($"  -- Inserting data into table: {table.TableName}");
                 sb.AppendLine($"  FORALL i IN V_Fake_{sanitizedTableName}_Data.FIRST..V_Fake_{sanitizedTableName}_Data.LAST");
-                // Table name in INSERT INTO should be quoted if it can contain special characters or is case-sensitive.
-                sb.AppendLine($"    INSERT INTO \"{table.TableName}\" VALUES V_Fake_{sanitizedTableName}_Data(i);");
+                // Table name in INSERT INTO should not be quoted if it's schema-qualified
+                sb.AppendLine($"    INSERT INTO {table.TableName} VALUES V_Fake_{sanitizedTableName}_Data(i);");
                 sb.AppendLine();
             }
 

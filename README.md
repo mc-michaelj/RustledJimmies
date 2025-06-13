@@ -1,37 +1,130 @@
-# Intelligent Oracle SQL Optimizer
+# Oracle SQL Optimizer
 
-This is an advanced desktop tool for safely analyzing, optimizing, and validating entire Oracle PL/SQL procedures using Google's Gemini API. It accepts a full procedure body, intelligently determines how to test it, and uses a transaction-based workflow to guarantee data safety.
+A Windows Forms application that uses AI to analyze and optimize Oracle SQL procedures, with a focus on performance improvements and best practices.
 
----
+## Features
 
-## How It Works: The Intelligent Workflow
+- **AI-Powered Analysis**: Uses Google's Gemini AI to analyze SQL procedures and suggest optimizations
+- **Performance Testing**: Executes both original and optimized procedures with timing comparisons
+- **Smart Table Management**: Automatically handles table dependencies and data cleanup
+- **Transaction Safety**: All operations are performed within transactions with automatic rollback
+- **Detailed Reporting**: Shows execution times and data comparison between original and optimized versions
 
-1. **User Input**: The user pastes an Oracle `PROCEDURE` body into the application, along with their database connection details.
-2. **AI Test Planning**: The application sends the procedure to the Gemini API, asking it to act as a Test Planner and provide:
-   - `validation_query_before`: A `SELECT` statement to get the data state _before_ the logic runs.
-   - `optimized_procedure_body`: The full, optimized PL/SQL code.
-   - `validation_query_after`: A `SELECT` statement to get the data state _after_ the logic runs.
-3. **"Before" Snapshot**: The application connects to Oracle and executes the `validation_query_before` to get the baseline data state.
-4. **Safe Execution & "After" Snapshot**: The application starts a database **TRANSACTION**, executes the `optimized_procedure_body`, and immediately runs the `validation_query_after` to get the new data state.
-5. **Automated Validation & Decision**:
-   - **PASS**: If the data matches, the application issues a **COMMIT** and approves the script.
-   - **FAIL**: If the data does not match, it issues a **ROLLBACK**, undoing all changes.
-6. **Display Results**: The application displays the results, including a clear "PASS" or "FAIL (Rolled Back)" status.
+## Process Flow
 
----
+1. **Input & Analysis**
 
-## Installation & Usage
+   - User provides a SQL procedure for analysis
+   - Application extracts table dependencies and schema information
+   - AI analyzes the code for potential optimizations
 
-### Installation
+2. **Table Management**
 
-No installation is required. Simply download the latest `.exe` file from the **Releases** page on the right-hand side of the GitHub repository.
+   - Identifies all tables referenced in the procedure
+   - Queries Oracle's data dictionary for foreign key relationships
+   - Performs topological sort to determine correct deletion order
+   - Handles schema-qualified table names for accurate operations
 
-### Usage Guide
+3. **Testing Process**
 
-1. Double-click the downloaded `.exe` file to run the application.
-2. **Connection Details**: Fill in the three connection fields at the top of the window.
-   - **Host**: `dev5-mer-db:1521/TCTN_MASTER`
-   - **User**: `cisconvert`
-   - **Password**: `cisconvert`
-3. **Procedure Body**: Paste the full Oracle `PROCEDURE` into the large text area.
-4. **Analyze**: Click the "Analyze & Optimize" button and wait for the results.
+   - Creates a transaction for safe testing
+   - Clears table data in dependency order
+   - Inserts test data if provided
+   - Executes both original and optimized procedures
+   - Measures execution time for each version
+   - Validates results using provided validation queries
+   - Automatically rolls back all changes
+
+4. **Results Display**
+   - Shows execution times for both versions
+   - Displays data comparison between original and optimized results
+   - Presents AI-suggested optimizations
+   - Highlights performance improvements
+
+## Implementation Details
+
+### Table Dependency Management
+
+- Uses Oracle's `ALL_CONSTRAINTS` view to identify foreign key relationships
+- Implements Kahn's algorithm for topological sorting
+- Handles cyclic dependencies with clear error reporting
+- Supports schema-qualified table names
+
+### Transaction Safety
+
+- All operations run within `READ COMMITTED` transactions
+- Automatic rollback after testing
+- Exception handling with proper cleanup
+- Maintains database consistency
+
+### AI Integration
+
+- Uses Google's Gemini AI for code analysis
+- Structured prompts for consistent responses
+- JSON-based schema extraction
+- Performance-focused optimization suggestions
+
+## Requirements
+
+- .NET 8.0
+- Oracle Database Client
+- Google Cloud API Key (for Gemini AI)
+- Windows OS
+
+## Configuration
+
+1. Set up your Google Cloud API key in the application settings
+2. Configure Oracle connection string with appropriate credentials
+3. Ensure proper database permissions for:
+   - Table access
+   - Constraint information
+   - Data manipulation
+
+## Usage
+
+1. Launch the application
+2. Enter your Oracle connection string
+3. Paste the SQL procedure to analyze
+4. (Optional) Provide test data and validation queries
+5. Click "Analyze & Optimize"
+6. Review the results and suggested optimizations
+
+## Error Handling
+
+The application handles various scenarios:
+
+- Missing tables or views
+- Foreign key constraint violations
+- Cyclic dependencies
+- Invalid SQL syntax
+- AI service unavailability
+
+## Best Practices
+
+- Always provide schema-qualified table names
+- Include appropriate test data
+- Use specific validation queries
+- Review AI suggestions before applying
+- Test optimizations in a safe environment
+
+## Security Considerations
+
+- API keys are stored securely
+- Database credentials are handled safely
+- All operations are transactional
+- No permanent data modifications during testing
+
+## Performance Considerations
+
+- Efficient table dependency resolution
+- Optimized database queries
+- Minimal memory footprint
+- Fast execution time comparison
+
+## Future Improvements
+
+- Support for multiple AI models
+- Enhanced performance metrics
+- Batch processing capabilities
+- Custom optimization rules
+- Export/import functionality
