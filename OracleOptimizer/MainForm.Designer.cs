@@ -110,10 +110,10 @@ namespace OracleOptimizer
             // procedureLabel
             // 
             procedureLabel.AutoSize = true;
-            procedureLabel.Location = new Point(12, 110);
+            procedureLabel.Location = new Point(12, 140);
             procedureLabel.Name = "procedureLabel";
             procedureLabel.Size = new Size(98, 15);
-            procedureLabel.TabIndex = 6;
+            procedureLabel.TabIndex = 18; // Shifted
             procedureLabel.Text = "Procedure Body:";
             // 
             // procedureBodyTextBox
@@ -122,21 +122,21 @@ namespace OracleOptimizer
             procedureBodyTextBox.AcceptsTab = true;
             procedureBodyTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             procedureBodyTextBox.Font = new Font("Consolas", 9.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            procedureBodyTextBox.Location = new Point(12, 128);
+            procedureBodyTextBox.Location = new Point(12, 158);
             procedureBodyTextBox.Multiline = true;
             procedureBodyTextBox.Name = "procedureBodyTextBox";
             procedureBodyTextBox.ScrollBars = ScrollBars.Both;
-            procedureBodyTextBox.Size = new Size(760, 250);
-            procedureBodyTextBox.TabIndex = 7;
+            procedureBodyTextBox.Size = new Size(760, 215);
+            procedureBodyTextBox.TabIndex = 19; // Shifted
             // 
             // analyzeButton
             // 
             analyzeButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             analyzeButton.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            analyzeButton.Location = new Point(647, 434);
+            analyzeButton.Location = new Point(647, 404);
             analyzeButton.Name = "analyzeButton";
             analyzeButton.Size = new Size(125, 30);
-            analyzeButton.TabIndex = 8; // TabIndex will be updated later if needed, keeping original for now
+            analyzeButton.TabIndex = 20; // Shifted
             analyzeButton.Text = "Analyze & Optimize";
             analyzeButton.UseVisualStyleBackColor = true;
             // 
@@ -146,11 +146,11 @@ namespace OracleOptimizer
             resultsTabControl.Controls.Add(optimizedProcedureTab);
             resultsTabControl.Controls.Add(geminiReportTab);
             resultsTabControl.Controls.Add(performanceTab);
-            resultsTabControl.Location = new Point(12, 470);
+            resultsTabControl.Location = new Point(12, 440);
             resultsTabControl.Name = "resultsTabControl";
             resultsTabControl.SelectedIndex = 0;
-            resultsTabControl.Size = new Size(760, 200);
-            resultsTabControl.TabIndex = 9; // TabIndex will be updated later if needed
+            resultsTabControl.Size = new Size(760, 150);
+            resultsTabControl.TabIndex = 21; // Shifted
             // 
             // optimizedProcedureTab
             // 
@@ -267,15 +267,53 @@ namespace OracleOptimizer
             geminiModelTextBox.TabIndex = 13;
             geminiModelTextBox.Text = "gemini-2.5-flash-preview-05-20";
             // 
+            // testRowCountLabel
+            //
+            testRowCountLabel.AutoSize = true;
+            testRowCountLabel.Location = new Point(12, 105);
+            testRowCountLabel.Name = "testRowCountLabel";
+            testRowCountLabel.Size = new Size(95, 15);
+            testRowCountLabel.TabIndex = 14;
+            testRowCountLabel.Text = "Test Row Count:";
+            //
+            // testRowCountNumericUpDown
+            //
+            testRowCountNumericUpDown.Location = new Point(111, 102);
+            testRowCountNumericUpDown.Maximum = new decimal(new int[] { 1000000, 0, 0, 0 });
+            testRowCountNumericUpDown.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            testRowCountNumericUpDown.Name = "testRowCountNumericUpDown";
+            testRowCountNumericUpDown.Size = new Size(120, 23);
+            testRowCountNumericUpDown.TabIndex = 15; // Original TabIndex
+            testRowCountNumericUpDown.Value = new decimal(new int[] { 1000, 0, 0, 0 });
+            //
+            // commandTimeoutLabel
+            //
+            commandTimeoutLabel.AutoSize = true;
+            commandTimeoutLabel.Location = new Point(243, 105);
+            commandTimeoutLabel.Name = "commandTimeoutLabel";
+            // Let AutoSize handle the size. Calculated/checked size is approx 110px for "Cmd Timeout (sec):"
+            commandTimeoutLabel.TabIndex = 16; // Will be adjusted later if this works
+            commandTimeoutLabel.Text = "Cmd Timeout (sec):";
+            //
+            // commandTimeoutNumericUpDown
+            //
+            commandTimeoutNumericUpDown.Location = new Point(365, 102); // Approx: 243 + 110 + 12
+            commandTimeoutNumericUpDown.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
+            commandTimeoutNumericUpDown.Minimum = new decimal(new int[] { 15, 0, 0, 0 });
+            commandTimeoutNumericUpDown.Name = "commandTimeoutNumericUpDown";
+            commandTimeoutNumericUpDown.Size = new Size(120, 23);
+            commandTimeoutNumericUpDown.TabIndex = 17; // Will be adjusted later
+            commandTimeoutNumericUpDown.Value = new decimal(new int[] { 60, 0, 0, 0 });
+            //
             // warningLabel
             // 
             warningLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             warningLabel.AutoSize = true;
             warningLabel.ForeColor = System.Drawing.Color.Red;
-            warningLabel.Location = new Point(12, 445);
+            warningLabel.Location = new Point(12, 415);
             warningLabel.Name = "warningLabel";
             warningLabel.Size = new Size(310, 15);
-            warningLabel.TabIndex = 18; // Not interactive, so TabIndex might not be strictly necessary
+            warningLabel.TabIndex = 22; // Shifted
             warningLabel.Text = "WARNING: Inserts and rolls back data in the live database.";
             //
             // MainForm
@@ -283,6 +321,10 @@ namespace OracleOptimizer
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(784, 615);
+            Controls.Add(commandTimeoutNumericUpDown);
+            Controls.Add(commandTimeoutLabel);
+            Controls.Add(testRowCountNumericUpDown);
+            Controls.Add(testRowCountLabel);
             Controls.Add(warningLabel);
             Controls.Add(geminiApiKeyTextBox);
             Controls.Add(geminiApiKeyLabel);
@@ -310,6 +352,8 @@ namespace OracleOptimizer
             performanceTab.ResumeLayout(false);
             statusStrip.ResumeLayout(false);
             statusStrip.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)testRowCountNumericUpDown).EndInit();
+            ((System.ComponentModel.ISupportInitialize)commandTimeoutNumericUpDown).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -339,5 +383,9 @@ namespace OracleOptimizer
         private Label geminiModelLabel;
         private TextBox geminiModelTextBox;
         private Label warningLabel;
+        private Label testRowCountLabel;
+        private System.Windows.Forms.NumericUpDown testRowCountNumericUpDown;
+        private Label commandTimeoutLabel;
+        private System.Windows.Forms.NumericUpDown commandTimeoutNumericUpDown;
     }
 }
