@@ -4,6 +4,7 @@ using System.Data;
 using System.IO;
 using Newtonsoft.Json;
 using System.Text;
+using OracleOptimizer; // Added for Logger
 using System.Collections.Generic;
 using System; // For Random, Math, should be okay, or use DBMS_RANDOM if preferred by Oracle context. For this step, using simple C# random or sequential.
 
@@ -18,7 +19,11 @@ namespace OracleOptimizer
             hostTextBox.Text = "dev5-mer-db:1521/TCTN_MASTER";
             userTextBox.Text = "cisconvert";
             passwordTextBox.Text = "cisconvert";
-            geminiApiKeyTextBox.Text = "AIzaSyCejA2q9u3nieoSxQX9RpJsWMIJWGKDN7I";
+            // The Gemini API key should be stored securely, not hardcoded.
+            // For example, use environment variables, a secure configuration file, or a secrets manager.
+            // Consider using PlaceholderText for initial guidance in the UI if needed.
+            geminiApiKeyTextBox.Text = "";
+            geminiApiKeyTextBox.PlaceholderText = "Enter API Key (Store Securely - See App Docs)";
             procedureBodyTextBox.Text = @"
 PROCEDURE AR_Recapture_w_CR IS
    --  Purpose: Identify AR Recapture IDs that have a Credit (such as overpmtcr) invoice included.
@@ -55,32 +60,60 @@ PROCEDURE AR_Recapture_w_CR IS
             analyzeButton.Enabled = false;
             statusLabel.Text = "Processing...";
             performanceLabel.Text = ""; // Clear performance label
-            // reportTextBox.Text = ""; // Decide if we want to clear this for logic tests
 
             try
             {
+                Logger.LogInfo("Analysis process started by user.");
                 await ExecuteAnalysisAndTestingAsync();
+                Logger.LogInfo("Analysis process completed successfully.");
             }
-            catch (OracleException oraEx) when (oraEx.Message.Contains("ORA-50000") || oraEx.Message.Contains("ORA-12170") || oraEx.Message.Contains("ORA-01017"))
+            catch (OracleException oraEx)
             {
-                statusLabel.Text = $"Oracle Error: {oraEx.Message}. Check connection details, credentials, and network.";
-                File.AppendAllText("log.txt", $"Oracle Connection Error: {oraEx}\n");
+                string userMessage = "An Oracle database error occurred. Please check your connection details and credentials. Contact support if the issue persists.";
+                if (oraEx.Number == 1017) // ORA-01017: invalid username/password; logon denied
+                {
+                    userMessage = "Oracle Error: Invalid username or password. Please verify your credentials.";
+                }
+                else if (oraEx.Number == 12170 || oraEx.Number == 12541 || oraEx.Number == 12514) // TNS errors
+                {
+                    userMessage = "Oracle Error: Could not connect to the database. Verify host, port, and service name. Ensure the listener is running.";
+                }
+                else if (oraEx.Message.Contains("ORA-50000")) // Custom application error
+                {
+                    userMessage = "An application-specific Oracle error occurred. Details have been logged.";
+                }
+                statusLabel.Text = userMessage;
+                Logger.LogError("OracleException in analyzeButton_Click", oraEx);
             }
             catch (HttpRequestException httpEx)
             {
-                statusLabel.Text = $"API Request Error: {httpEx.Message}. Check API key and network.";
-                File.AppendAllText("log.txt", $"API Request Error: {httpEx}\n");
+                statusLabel.Text = "API Request Error: Could not connect to the analysis service. Check your network connection and API key.";
+                Logger.LogError("HttpRequestException in analyzeButton_Click", httpEx);
             }
             catch (JsonException jsonEx)
             {
-                statusLabel.Text = $"JSON Parsing Error: {jsonEx.Message}. Check the API response or input data.";
-                File.AppendAllText("log.txt", $"JSON Parsing Error: {jsonEx}\n");
+                statusLabel.Text = "Data Error: Could not process the data received from the analysis service. Details have been logged.";
+                Logger.LogError("JsonException in analyzeButton_Click", jsonEx);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ioEx) // Can be thrown by various operations
             {
-                statusLabel.Text = $"An error occurred: {ex.Message}";
-                System.Diagnostics.Debug.WriteLine($"Error in analyzeButton_Click: {ex}");
-                File.AppendAllText("log.txt", $"Error in analyzeButton_Click: {ex}\n");
+                statusLabel.Text = "An internal operation error occurred. Details have been logged.";
+                Logger.LogError("InvalidOperationException in analyzeButton_Click", ioEx);
+            }
+            catch (ArgumentNullException argNullEx)
+            {
+                statusLabel.Text = $"Input Error: {argNullEx.Message}"; // Display specific message from ArgumentNullException
+                Logger.LogError("ArgumentNullException in analyzeButton_Click", argNullEx);
+            }
+            catch (ArgumentException argEx) // Catch new validation errors
+            {
+                statusLabel.Text = $"Input Error: {argEx.Message}"; // Display specific message from ArgumentException
+                Logger.LogError("ArgumentException in analyzeButton_Click", argEx);
+            }
+            catch (Exception ex) // General fallback
+            {
+                statusLabel.Text = "An unexpected error occurred. Details have been logged.";
+                Logger.LogError("Generic Exception in analyzeButton_Click", ex);
             }
             finally
             {
@@ -90,7 +123,10 @@ PROCEDURE AR_Recapture_w_CR IS
 
         private async Task ExecuteAnalysisAndTestingAsync()
         {
-            const int TEST_ROW_COUNT = 1000;
+            // Read TEST_ROW_COUNT from the NumericUpDown control
+            int testRowCount = (int)testRowCountNumericUpDown.Value;
+            Logger.LogInfo($"Using Test Row Count: {testRowCount}");
+
             Func<string, string> convertProcedureToExecutableBlock = (procedureBody) =>
             {
                 string executableBlock = procedureBody.Trim();
@@ -108,85 +144,155 @@ PROCEDURE AR_Recapture_w_CR IS
             string originalProcedure = procedureBodyTextBox.Text;
             string modelName = geminiModelTextBox.Text;
 
-            if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(originalProcedure))
+            // Input Validation
+            if (string.IsNullOrWhiteSpace(host)) throw new ArgumentNullException(nameof(host), "Host (Data Source) cannot be empty.");
+            // Basic check for Oracle easy connect string format (e.g., hostname:port/service_name)
+            if (!host.Contains(':') || !host.Contains('/'))
             {
-                statusLabel.Text = "Error: All input fields, including API Key and Procedure, are required.";
-                return;
+                throw new ArgumentException("Invalid Host (Data Source) format. Expected format like 'hostname:port/service_name'.", nameof(host));
             }
+            if (string.IsNullOrWhiteSpace(user)) throw new ArgumentNullException(nameof(user), "User ID cannot be empty.");
+            if (string.IsNullOrWhiteSpace(password)) throw new ArgumentNullException(nameof(password), "Password cannot be empty.");
+            if (string.IsNullOrWhiteSpace(apiKey)) throw new ArgumentNullException(nameof(apiKey), "API Key cannot be empty.");
+            if (string.IsNullOrWhiteSpace(modelName)) throw new ArgumentNullException(nameof(modelName), "Gemini Model Name cannot be empty.");
 
+            if (string.IsNullOrWhiteSpace(originalProcedure)) throw new ArgumentNullException(nameof(originalProcedure), "Procedure body cannot be empty.");
+            const int MAX_PROCEDURE_LENGTH = 50000; // Max 50k chars
+            if (originalProcedure.Length > MAX_PROCEDURE_LENGTH)
+            {
+                throw new ArgumentException($"Procedure body is too long. Maximum length is {MAX_PROCEDURE_LENGTH} characters.", nameof(originalProcedure));
+            }
+            // Basic check for non-ASCII characters or suspicious patterns if desired - keeping it simple for now.
+
+            Logger.LogInfo($"Starting analysis for host: {host}, user: {user}, model: {modelName}");
+
+            // Step 1 & 2: Analyze with Gemini and get schema
             statusLabel.Text = "1/5: Analyzing with Gemini for optimization...";
-            optimizedProcedureTextBox.Text = "";
-            reportTextBox.Text = "";
-
-            var geminiService = new GeminiService(apiKey);
-            var geminiResponse = await geminiService.AnalyzeSqlAsync(originalProcedure, modelName);
-            if (geminiResponse == null || string.IsNullOrWhiteSpace(geminiResponse.OptimizedProcedureBody) || string.IsNullOrWhiteSpace(geminiResponse.ValidationQueryAfter))
-            {
-                throw new Exception("Gemini did not return a valid or complete test plan.");
-            }
+            (var geminiResponse, var geminiSchemaJson) = await GetGeminiAnalysisAndSchemaAsync(apiKey, originalProcedure, modelName);
 
             reportTextBox.Text = geminiResponse.Explanation;
             optimizedProcedureTextBox.Text = geminiResponse.OptimizedProcedureBody;
             resultsTabControl.SelectedTab = geminiReportTab;
 
-            statusLabel.Text = "2/5: Getting table schema for testing...";
-            string geminiSchemaJson = await geminiService.GetTableSchemaFromGemini(originalProcedure, modelName);
-            if (string.IsNullOrWhiteSpace(geminiSchemaJson) || geminiSchemaJson.StartsWith("-- Error"))
-            {
-                throw new Exception($"Failed to get table schema from Gemini. Response: {geminiSchemaJson}");
-            }
-
-            statusLabel.Text = "3/5: Running Original Procedure...";
-            var oracleService = new OracleService();
+            // Step 3, 4, 5: Run procedures and compare results
             string connectionString = $"Data Source={host};User Id={user};Password={password};Connection Timeout=120;";
-            string testDataPlSql = GenerateInsertStatements(geminiSchemaJson, TEST_ROW_COUNT, out List<string> tableNamesToTruncate);
+            string finalReportText = await ExecuteAndCompareOracleProceduresAsync(
+                new OracleService(), connectionString, originalProcedure, geminiResponse.OptimizedProcedureBody,
+                geminiSchemaJson, geminiResponse.ValidationQueryAfter, convertProcedureToExecutableBlock, testRowCount // Use the variable here
+            );
 
-            string originalExecutableBlock = convertProcedureToExecutableBlock(originalProcedure);
-            (DataTable originalData, long originalTime) = await RunProcedureAndGetDataAsync(oracleService, connectionString, testDataPlSql, tableNamesToTruncate, originalExecutableBlock, geminiResponse.ValidationQueryAfter);
-
-            statusLabel.Text = "4/5: Running Optimized Procedure...";
-            string optimizedExecutableBlock = convertProcedureToExecutableBlock(geminiResponse.OptimizedProcedureBody);
-            (DataTable optimizedData, long optimizedTime) = await RunProcedureAndGetDataAsync(oracleService, connectionString, testDataPlSql, tableNamesToTruncate, optimizedExecutableBlock, geminiResponse.ValidationQueryAfter);
-
-            statusLabel.Text = "5/5: Comparing results...";
-            bool areIdentical = DataTableComparator.AreIdentical(originalData, optimizedData, out string comparisonDetails);
-
-            string finalReport = (areIdentical ? "✅ LOGIC TEST PASSED" : "❌ LOGIC TEST FAILED") + "\n\n" +
-                                 $"PERFORMANCE:\n" +
-                                 $"- Original:    {originalTime}ms\n" +
-                                 $"- Optimized:   {optimizedTime}ms\n" +
-                                 $"- Improvement: {originalTime - optimizedTime}ms\n\n" +
-                                 $"VALIDATION DETAILS:\n{comparisonDetails}";
-
-            performanceLabel.Text = finalReport;
+            performanceLabel.Text = finalReportText;
             resultsTabControl.SelectedTab = performanceTab;
             statusLabel.Text = "Analysis and Testing Complete.";
         }
 
+        private async Task<string> ExecuteAndCompareOracleProceduresAsync(
+            OracleService oracleService, string connectionString, string originalProcedure, string optimizedProcedureBody,
+            string geminiSchemaJson, string validationQuery, Func<string, string> convertProcedureToExecutableBlock, int testRowCount)
+        {
+            statusLabel.Text = "3/5: Preparing test data..."; // Changed
+            Logger.LogInfo("Generating test data for procedure runs.");
+            string testDataPlSql = GenerateInsertStatements(geminiSchemaJson, testRowCount, out List<string> tableNamesToTruncate);
+            if (testDataPlSql.StartsWith("-- Error"))
+            {
+                Logger.LogError($"Failed to generate test data PL/SQL: {testDataPlSql}");
+                throw new InvalidOperationException("Failed to generate test data for database operations. Check logs for schema parsing issues.");
+            }
+
+            // Run Original Procedure
+            statusLabel.Text = "3/5: Running Original Procedure...";
+            string originalExecutableBlock = convertProcedureToExecutableBlock(originalProcedure);
+            Logger.LogInfo("Executing original procedure.");
+            (DataTable originalData, long originalTime) = await RunProcedureAndGetDataAsync(oracleService, connectionString, testDataPlSql, tableNamesToTruncate, originalExecutableBlock, validationQuery, "Original");
+
+            // Run Optimized Procedure
+            statusLabel.Text = "4/5: Running Optimized Procedure...";
+            string optimizedExecutableBlock = convertProcedureToExecutableBlock(optimizedProcedureBody);
+            Logger.LogInfo("Executing optimized procedure.");
+            (DataTable optimizedData, long optimizedTime) = await RunProcedureAndGetDataAsync(oracleService, connectionString, testDataPlSql, tableNamesToTruncate, optimizedExecutableBlock, validationQuery, "Optimized");
+
+            // Compare Results
+            statusLabel.Text = "5/5: Comparing results...";
+            Logger.LogInfo("Comparing results from original and optimized procedure runs.");
+            bool areIdentical = DataTableComparator.AreIdentical(originalData, optimizedData, out string comparisonDetails);
+
+            return (areIdentical ? "✅ LOGIC TEST PASSED" : "❌ LOGIC TEST FAILED") + "\n\n" +
+                   $"PERFORMANCE:\n" +
+                   $"- Original:    {originalTime}ms\n" +
+                   $"- Optimized:   {optimizedTime}ms\n" +
+                   $"- Improvement: {originalTime - optimizedTime}ms\n\n" +
+                   $"VALIDATION DETAILS:\n{comparisonDetails}";
+        }
+
+        private async Task<(GeminiSqlAnalysisResponse geminiResponse, string geminiSchemaJson)> GetGeminiAnalysisAndSchemaAsync(string apiKey, string originalProcedure, string modelName)
+        {
+            optimizedProcedureTextBox.Text = ""; // Clear previous results
+            reportTextBox.Text = "";             // Clear previous results
+
+            var geminiService = new GeminiService(apiKey);
+
+            Logger.LogInfo("Requesting SQL analysis from Gemini.");
+            statusLabel.Text = "1/5: Analyzing SQL with Gemini..."; // More specific status
+            var geminiResponse = await geminiService.AnalyzeSqlAsync(originalProcedure, modelName);
+            if (geminiResponse == null || string.IsNullOrWhiteSpace(geminiResponse.OptimizedProcedureBody) || string.IsNullOrWhiteSpace(geminiResponse.ValidationQueryAfter))
+            {
+                Logger.LogError("Gemini service returned invalid or incomplete data from AnalyzeSqlAsync.", new InvalidDataException("Gemini response (AnalyzeSqlAsync) was null or missing critical fields."));
+                throw new InvalidOperationException("The analysis service (Gemini) did not return a valid or complete SQL analysis. Please check the logs.");
+            }
+            Logger.LogInfo("Successfully received SQL analysis from Gemini.");
+
+            statusLabel.Text = "2/5: Getting table schema from Gemini..."; // More specific status
+            Logger.LogInfo("Requesting table schema from Gemini.");
+            string geminiSchemaJson = await geminiService.GetTableSchemaFromGemini(originalProcedure, modelName);
+            if (string.IsNullOrWhiteSpace(geminiSchemaJson) || geminiSchemaJson.StartsWith("-- Error"))
+            {
+                Logger.LogError($"Failed to get table schema from Gemini. Response: {geminiSchemaJson}", new InvalidDataException("Gemini schema response was invalid."));
+                throw new InvalidOperationException($"Failed to get table schema from the analysis service. Response: {geminiSchemaJson}");
+            }
+            Logger.LogInfo("Successfully received table schema from Gemini.");
+
+            return (geminiResponse, geminiSchemaJson);
+        }
+
         private async Task ClearTablesAsync(OracleService oracleService, OracleConnection connection, OracleTransaction transaction, List<string> tableNames)
         {
-            // 1. Normalize table names and prepare for query
             var uniqueTableNames = new HashSet<string>(tableNames.Select(t => t.ToUpperInvariant()));
+            if (!uniqueTableNames.Any()) return;
+
+            statusLabel.Text = "Analyzing table dependencies for cleanup...";
             var connectionStringBuilder = new OracleConnectionStringBuilder(connection.ConnectionString);
             string currentUser = connectionStringBuilder.UserID.ToUpper();
 
-            var parsedTables = uniqueTableNames.Select(fullTableName =>
+            var parsedTablesInfo = uniqueTableNames.Select(fullTableName =>
             {
                 string[] parts = fullTableName.Split('.');
-                string owner = parts.Length > 1 ? parts[0] : currentUser;
-                string tableName = parts.Length > 1 ? parts[1] : parts[0];
-                return (owner, tableName, fullTableName);
+                return (Owner: parts.Length > 1 ? parts[0] : currentUser, TableName: parts.Length > 1 ? parts[1] : parts[0], FullName: fullTableName);
             }).ToList();
 
-            var tableLookup = parsedTables.ToDictionary(t => (t.owner, t.tableName), t => t.fullTableName);
+            var tableLookupByOwnerTable = parsedTablesInfo.ToDictionary(t => (t.Owner, t.TableName), t => t.FullName);
 
-            // 2. Query for dependencies among the specified tables
-            var dependencies = new Dictionary<string, HashSet<string>>(); // Key: Parent, Value: Set of Children
+            var dependencies = await GetTableDependenciesAsync(oracleService, connection, transaction, parsedTablesInfo, tableLookupByOwnerTable);
+            var sortedTablesToClear = SortTablesForDeletion(uniqueTableNames, dependencies);
 
+            if (sortedTablesToClear.Any()) statusLabel.Text = "Clearing data from identified tables...";
+            foreach (var table in sortedTablesToClear)
+            {
+                Logger.LogInfo($"Executing DELETE FROM {table}");
+                await oracleService.ExecuteNonQueryAsync(connection, transaction, $"DELETE FROM {table}");
+            }
+        }
+
+        private async Task<Dictionary<string, HashSet<string>>> GetTableDependenciesAsync(
+            OracleService oracleService, OracleConnection connection, OracleTransaction transaction,
+            List<(string Owner, string TableName, string FullName)> parsedTablesInfo,
+            Dictionary<(string Owner, string TableName), string> tableLookupByOwnerTable)
+        {
+            var dependencies = new Dictionary<string, HashSet<string>>();
             var whereClauses = new List<string>();
             var parameters = new List<OracleParameter>();
             int i = 0;
-            foreach (var (owner, tableName, _) in parsedTables)
+
+            foreach (var (owner, tableName, _) in parsedTablesInfo)
             {
                 whereClauses.Add($"(a.owner = :p_owner{i} AND a.table_name = :p_table_name{i})");
                 parameters.Add(new OracleParameter($"p_owner{i}", owner));
@@ -194,77 +300,101 @@ PROCEDURE AR_Recapture_w_CR IS
                 i++;
             }
 
-            if (whereClauses.Count > 0)
+            if (!whereClauses.Any()) return dependencies;
+
+            string sql = $@"
+                SELECT a.owner, a.table_name, r.owner AS r_owner, r.table_name AS r_table_name
+                FROM all_constraints a
+                JOIN all_constraints r ON a.r_constraint_name = r.constraint_name AND a.r_owner = r.owner
+                WHERE a.constraint_type = 'R'
+                AND ({string.Join(" OR ", whereClauses)})";
+
+            using (var cmd = new OracleCommand(sql, connection))
             {
-                string sql = $@"
-                    SELECT a.owner, a.table_name, r.owner AS r_owner, r.table_name AS r_table_name
-                    FROM all_constraints a
-                    JOIN all_constraints r ON a.r_constraint_name = r.constraint_name AND a.r_owner = r.owner
-                    WHERE a.constraint_type = 'R'
-                    AND ({string.Join(" OR ", whereClauses)})";
-
-                using (var cmd = new OracleCommand(sql, connection))
+                cmd.Transaction = transaction;
+                cmd.Parameters.AddRange(parameters.ToArray());
+                using (var reader = await cmd.ExecuteReaderAsync())
                 {
-                    cmd.Transaction = transaction;
-                    cmd.Parameters.AddRange(parameters.ToArray());
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    while (await reader.ReadAsync())
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            var childOwner = reader.GetString(0).ToUpper();
-                            var childTable = reader.GetString(1).ToUpper();
-                            var parentOwner = reader.GetString(2).ToUpper();
-                            var parentTable = reader.GetString(3).ToUpper();
+                        var childOwner = reader.GetString(0).ToUpper();
+                        var childTable = reader.GetString(1).ToUpper();
+                        var parentOwner = reader.GetString(2).ToUpper();
+                        var parentTable = reader.GetString(3).ToUpper();
 
-                            if (tableLookup.TryGetValue((childOwner, childTable), out var childFullName) &&
-                                tableLookup.TryGetValue((parentOwner, parentTable), out var parentFullName))
+                        if (tableLookupByOwnerTable.TryGetValue((childOwner, childTable), out var childFullName) &&
+                            tableLookupByOwnerTable.TryGetValue((parentOwner, parentTable), out var parentFullName))
+                        {
+                            if (!dependencies.ContainsKey(parentFullName))
                             {
-                                if (!dependencies.ContainsKey(parentFullName))
-                                {
-                                    dependencies[parentFullName] = new HashSet<string>();
-                                }
-                                dependencies[parentFullName].Add(childFullName);
+                                dependencies[parentFullName] = new HashSet<string>();
                             }
+                            dependencies[parentFullName].Add(childFullName);
                         }
                     }
                 }
             }
+            return dependencies;
+        }
 
-            // 3. Topological Sort (Kahn's algorithm) to determine deletion order
+        private List<string> SortTablesForDeletion(HashSet<string> uniqueTableNames, Dictionary<string, HashSet<string>> dependencies)
+        {
             var sortedList = new List<string>();
             var inDegree = uniqueTableNames.ToDictionary(t => t, t => 0);
-            var graph = uniqueTableNames.ToDictionary(t => t, t => new HashSet<string>()); // Child -> Set of Parents
+            // Correctly build the graph: if B depends on A (A is parent of B), edge is A -> B
+            // For deletion, we want to delete children first. So if A is parent of B, B should come before A.
+            // Kahn's algorithm gives a topological sort. If we build graph as Parent -> Child,
+            // then process nodes with in-degree 0. These are tables not depended upon by other tables in the set.
+            // This is the reverse of what we want for deletion (delete children first).
+            // So, we should build the graph as Child -> Parent for Kahn's.
+            // Or, build Parent -> Child and then reverse the sorted list. Let's try Child -> Parent.
 
-            foreach (var parent in dependencies.Keys)
+            // Child -> Set of Parents that are within uniqueTableNames
+            var graph = uniqueTableNames.ToDictionary(t => t, t => new HashSet<string>());
+            // In-degree: count of tables (within uniqueTableNames) that this table depends on.
+            // So, if B depends on A (A is parent), B has an in-degree related to A.
+
+            // Let's re-think: We want to delete tables that nothing else (in our list) depends on first.
+            // These are the "leaf" nodes in a dependency graph where edge A -> B means A must exist before B (B depends on A).
+            // So, we want to delete B before A. This means we process nodes with no outgoing edges to other nodes in the list first.
+            // Kahn's algorithm sorts by processing nodes with in-degree 0.
+            // If A->B means B depends on A:
+            // Parent A, Child B. To delete B then A, A must have an in-degree of 0 from B's perspective in a reversed graph.
+
+            // Let's stick to standard Kahn's: A is prerequisite for B (B depends on A). Edge A -> B.
+            // In-degree of B is 1 (from A). In-degree of A is 0. Kahn's will output A, then B.
+            // This is the order of CREATION. For deletion, we need the REVERSE order: B, then A.
+
+            // Graph: Key = Table, Value = Set of tables that depend on Key (Children of Key)
+            var adjacencyList = uniqueTableNames.ToDictionary(t => t, t => new HashSet<string>());
+            var currentInDegree = uniqueTableNames.ToDictionary(t => t, t => 0);
+
+            foreach (var parentTable in dependencies.Keys) // parentTable is a key in dependencies
             {
-                foreach (var child in dependencies[parent])
+                foreach (var childTable in dependencies[parentTable]) // childTable depends on parentTable
                 {
-                    if (uniqueTableNames.Contains(child) && uniqueTableNames.Contains(parent))
+                    if (uniqueTableNames.Contains(parentTable) && uniqueTableNames.Contains(childTable))
                     {
-                        if (graph[child].Add(parent))
+                        if (adjacencyList[parentTable].Add(childTable)) // Edge: parentTable -> childTable
                         {
-                            inDegree[parent]++;
+                            currentInDegree[childTable]++;
                         }
                     }
                 }
             }
 
-            var queue = new Queue<string>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
-
+            var queue = new Queue<string>(currentInDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
             while (queue.Count > 0)
             {
-                var node = queue.Dequeue();
-                sortedList.Add(node);
+                var table = queue.Dequeue();
+                sortedList.Add(table);
 
-                if (graph.TryGetValue(node, out var neighbors))
+                foreach (var dependentTable in adjacencyList[table]) // For each table that depends on `table`
                 {
-                    foreach (var neighbor in neighbors)
+                    currentInDegree[dependentTable]--;
+                    if (currentInDegree[dependentTable] == 0)
                     {
-                        inDegree[neighbor]--;
-                        if (inDegree[neighbor] == 0)
-                        {
-                            queue.Enqueue(neighbor);
-                        }
+                        queue.Enqueue(dependentTable);
                     }
                 }
             }
@@ -272,47 +402,71 @@ PROCEDURE AR_Recapture_w_CR IS
             if (sortedList.Count < uniqueTableNames.Count)
             {
                 var missing = string.Join(", ", uniqueTableNames.Except(sortedList));
-                throw new Exception($"Cyclic dependency detected among tables, cannot determine deletion order. Problematic tables might include: {missing}");
+                Logger.LogError($"Cyclic dependency detected among tables. Problematic tables might include: {missing}. Full list: {string.Join(", ", uniqueTableNames)}", new InvalidOperationException("Cyclic dependency in tables."));
+                throw new InvalidOperationException($"Cyclic dependency detected among tables, cannot determine deletion order. Problematic tables might include: {missing}");
             }
 
-            // 4. Clear table data respecting foreign keys
-            foreach (var table in sortedList)
-            {
-                await oracleService.ExecuteNonQueryAsync(connection, transaction, $"DELETE FROM {table}");
-            }
+            // For deletion, we need to delete in reverse topological order
+            sortedList.Reverse();
+            return sortedList;
         }
 
         private async Task<(DataTable results, long time)> RunProcedureAndGetDataAsync(
             OracleService oracleService, string connectionString, string testDataPlSql,
-            List<string> tablesToTruncate, string procedureExecutableBlock, string validationQuery)
+            List<string> tablesToTruncate, string procedureExecutableBlock, string validationQuery, string procedureType /* "Original" or "Optimized" */)
         {
+            Logger.LogInfo($"Starting RunProcedureAndGetDataAsync for {procedureType} procedure.");
             using var connection = new OracleConnection(connectionString);
             await connection.OpenAsync();
+            Logger.LogInfo($"Database connection opened for {procedureType}.");
             using var transaction = connection.BeginTransaction(IsolationLevel.ReadCommitted);
+            Logger.LogInfo($"Transaction started for {procedureType}.");
 
             try
             {
-                // Clear tables in the correct order for deletion
+                statusLabel.Text = $"Clearing test tables for {procedureType} run...";
+                Logger.LogInfo($"Clearing tables for {procedureType}: {string.Join(", ", tablesToTruncate)}");
                 await ClearTablesAsync(oracleService, connection, transaction, tablesToTruncate);
+                Logger.LogInfo($"Tables cleared for {procedureType}.");
 
-                // Insert fresh data for the test run
                 if (!string.IsNullOrWhiteSpace(testDataPlSql))
                 {
+                    statusLabel.Text = $"Inserting test data for {procedureType} run...";
+                    Logger.LogInfo($"Inserting test data for {procedureType}.");
                     await oracleService.ExecuteNonQueryAsync(connection, transaction, testDataPlSql);
+                    Logger.LogInfo($"Test data inserted for {procedureType}.");
                 }
 
+                statusLabel.Text = $"Executing {procedureType} procedure...";
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                Logger.LogInfo($"Executing {procedureType} procedure block.");
                 await oracleService.ExecuteNonQueryAsync(connection, transaction, procedureExecutableBlock);
                 stopwatch.Stop();
+                Logger.LogInfo($"{procedureType} procedure executed in {stopwatch.ElapsedMilliseconds}ms.");
 
+                statusLabel.Text = $"Validating results for {procedureType} procedure...";
+                Logger.LogInfo($"Executing validation query for {procedureType}.");
                 var dataTable = await oracleService.ExecuteQueryWithinTransactionAsync(connection, transaction, validationQuery);
+                Logger.LogInfo($"Validation query completed for {procedureType}.");
 
-                await transaction.RollbackAsync(); // Rollback all changes (deletes, inserts, procedure effects)
+                await transaction.RollbackAsync();
+                Logger.LogInfo($"Transaction rolled back for {procedureType}.");
                 return (dataTable, stopwatch.ElapsedMilliseconds);
             }
-            catch
+            catch (OracleException oraEx)
             {
-                await transaction.RollbackAsync();
+                Logger.LogError($"OracleException during {procedureType} procedure execution or data retrieval.", oraEx);
+                await transaction.RollbackAsync(); // Ensure rollback on error
+                Logger.LogInfo($"Transaction rolled back for {procedureType} due to OracleException.");
+                // Re-throw to be caught by the main handler in analyzeButton_Click
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Generic Exception during {procedureType} procedure execution or data retrieval.", ex);
+                await transaction.RollbackAsync(); // Ensure rollback on error
+                Logger.LogInfo($"Transaction rolled back for {procedureType} due to Exception.");
+                // Re-throw to be caught by the main handler in analyzeButton_Click
                 throw;
             }
         }
@@ -340,14 +494,12 @@ PROCEDURE AR_Recapture_w_CR IS
         {
             if (string.IsNullOrWhiteSpace(geminiSchemaJson))
             {
-                // Or throw new ArgumentNullException(nameof(geminiSchemaJson));
-                System.Diagnostics.Debug.WriteLine("GenerateFakeDataCte: geminiSchemaJson is null or empty.");
+                Logger.LogInfo("GenerateFakeDataCte: geminiSchemaJson is null or empty.");
                 return string.Empty;
             }
             if (rowCount <= 0)
             {
-                // Or throw new ArgumentOutOfRangeException(nameof(rowCount));
-                System.Diagnostics.Debug.WriteLine("GenerateFakeDataCte: rowCount must be positive.");
+                Logger.LogInfo("GenerateFakeDataCte: rowCount must be positive.");
                 return string.Empty;
             }
 
@@ -357,14 +509,13 @@ PROCEDURE AR_Recapture_w_CR IS
                 tableSchemas = JsonConvert.DeserializeObject<List<TableSchema>>(geminiSchemaJson);
                 if (tableSchemas == null || tableSchemas.Count == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("GenerateFakeDataCte: Deserialized schema is null or empty.");
+                    Logger.LogInfo("GenerateFakeDataCte: Deserialized schema is null or empty.");
                     return string.Empty; // No tables to process
                 }
             }
             catch (JsonException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Error parsing JSON schema: {ex.Message}");
-                // Consider re-throwing or returning an error indicator if appropriate for the caller
+                Logger.LogError("GenerateFakeDataCte: Error parsing JSON schema", ex);
                 return $"-- Error parsing JSON schema: {ex.Message}\n";
             }
 
@@ -373,7 +524,7 @@ PROCEDURE AR_Recapture_w_CR IS
             {
                 if (table.Columns == null || table.Columns.Count == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Table {table.TableName} has no columns, skipping.");
+                    Logger.LogInfo($"GenerateFakeDataCte: Table {table.TableName} has no columns, skipping.");
                     continue; // Skip this table if it has no columns
                 }
 
@@ -410,7 +561,7 @@ PROCEDURE AR_Recapture_w_CR IS
                         else
                         {
                             generatedValue = "NULL";
-                            System.Diagnostics.Debug.WriteLine($"GenerateFakeDataCte: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
+                            Logger.LogInfo($"GenerateFakeDataCte: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
                         }
 
                         sbCte.Append($"{generatedValue} AS \"{column.ColumnName}\"");
@@ -440,8 +591,11 @@ PROCEDURE AR_Recapture_w_CR IS
 
         private string SanitizeForPlSqlIdentifier(string? name) // CS8604: Make 'name' parameter nullable
         {
-            if (string.IsNullOrWhiteSpace(name)) return "default_identifier";
-
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                Logger.LogInfo("SanitizeForPlSqlIdentifier: Input name is null or whitespace, returning 'default_identifier'.");
+                return "default_identifier";
+            }
             // Replace non-alphanumeric characters (except underscore) with underscore
             string sanitized = System.Text.RegularExpressions.Regex.Replace(name, @"[^a-zA-Z0-9_]", "_");
 
@@ -456,60 +610,92 @@ PROCEDURE AR_Recapture_w_CR IS
             return sanitized.Length > 30 ? sanitized.Substring(0, 30) : sanitized; // Basic truncation for safety
         }
 
-        private string GenerateInsertStatements(string geminiSchemaJson, int rowCount, out List<string> tableNames)
+        private List<TableSchema>? DeserializeTableSchemas(string geminiSchemaJson, out string? errorResult)
         {
-            tableNames = new List<string>();
+            errorResult = null;
             if (string.IsNullOrWhiteSpace(geminiSchemaJson))
             {
-                System.Diagnostics.Debug.WriteLine("GenerateInsertStatements: geminiSchemaJson is null or empty.");
-                return "-- Error: Gemini schema JSON is null or empty.\n";
-            }
-            if (rowCount <= 0)
-            {
-                System.Diagnostics.Debug.WriteLine("GenerateInsertStatements: rowCount must be positive.");
-                return "-- Error: Row count must be positive.\n";
+                Logger.LogError("DeserializeTableSchemas: geminiSchemaJson is null or empty.");
+                errorResult = "-- Error: Gemini schema JSON is null or empty.\n";
+                return null;
             }
 
-            List<TableSchema>? tableSchemas;
             try
             {
-                tableSchemas = JsonConvert.DeserializeObject<List<TableSchema>>(geminiSchemaJson);
+                var tableSchemas = JsonConvert.DeserializeObject<List<TableSchema>>(geminiSchemaJson);
                 if (tableSchemas == null || tableSchemas.Count == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("GenerateInsertStatements: Deserialized schema is null or empty.");
-                    return "-- Error: Deserialized schema is null or contains no tables.\n";
+                    Logger.LogError("DeserializeTableSchemas: Deserialized schema is null or empty.");
+                    errorResult = "-- Error: Deserialized schema is null or contains no tables.\n";
+                    return null;
                 }
+                return tableSchemas;
             }
             catch (JsonException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Error parsing JSON schema: {ex.Message}");
-                return $"-- Error parsing JSON schema: {ex.Message}\n";
+                Logger.LogError("DeserializeTableSchemas: Error parsing JSON schema", ex);
+                errorResult = $"-- Error parsing JSON schema: {ex.Message}\n";
+                return null;
             }
+        }
 
+        private string GeneratePlSqlDeclarations(List<TableSchema> tableSchemas, List<string> outTableNames)
+        {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("DECLARE");
-
             foreach (TableSchema table in tableSchemas)
             {
                 if (table.Columns == null || table.Columns.Count == 0 || string.IsNullOrWhiteSpace(table.TableName))
                 {
-                    System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Table {(table.TableName ?? "[NULL] ")} has no columns or is invalid, skipping for PL/SQL generation.");
+                    Logger.LogInfo($"GeneratePlSqlDeclarations: Table {(table.TableName ?? "[NULL TABLE NAME]")} has no columns or is invalid, skipping for PL/SQL type declaration.");
                     continue;
                 }
                 string sanitizedTableName = SanitizeForPlSqlIdentifier(table.TableName);
-                // It's important to add the original table name to the list for later use (e.g. TRUNCATE)
-                tableNames.Add(table.TableName);
+                outTableNames.Add(table.TableName); // Add original table name for TRUNCATE list
 
                 sb.AppendLine($"  TYPE T_Fake_{sanitizedTableName}_Rows IS TABLE OF {table.TableName}%ROWTYPE INDEX BY PLS_INTEGER;");
                 sb.AppendLine($"  V_Fake_{sanitizedTableName}_Data T_Fake_{sanitizedTableName}_Rows;");
             }
-            sb.AppendLine("BEGIN");
+            return sb.ToString();
+        }
 
+        private string GenerateInsertStatements(string geminiSchemaJson, int rowCount, out List<string> tableNames)
+        {
+            tableNames = new List<string>(); // Initialize out parameter
+            var tableSchemas = DeserializeTableSchemas(geminiSchemaJson, out string? errorResult);
+            if (errorResult != null)
+            {
+                return errorResult;
+            }
+            if (tableSchemas == null) // Should be covered by errorResult but as a safeguard
+            {
+                return "-- Error: Unknown error during schema deserialization.\n";
+            }
+
+            if (rowCount <= 0)
+            {
+                Logger.LogError("GenerateInsertStatements: rowCount must be positive.");
+                return "-- Error: Row count must be positive.\n";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.Append(GeneratePlSqlDeclarations(tableSchemas, tableNames)); // tableNames is populated here
+            sb.AppendLine("BEGIN");
+            sb.Append(GeneratePlSqlDataPopulationLogic(tableSchemas, rowCount));
+            sb.Append(GeneratePlSqlInsertAllLoop(tableSchemas));
+            sb.AppendLine("END;");
+            return sb.ToString();
+        }
+
+        private string GeneratePlSqlDataPopulationLogic(List<TableSchema> tableSchemas, int rowCount)
+        {
+            StringBuilder sb = new StringBuilder();
             foreach (TableSchema table in tableSchemas)
             {
                 if (table.Columns == null || table.Columns.Count == 0 || string.IsNullOrWhiteSpace(table.TableName))
                 {
-                    continue; // Already logged, just skip here
+                    Logger.LogInfo($"GeneratePlSqlDataPopulationLogic: Skipping table {(table.TableName ?? "[NULL TABLE NAME]")} due to no columns or invalid name.");
+                    continue;
                 }
                 string sanitizedTableName = SanitizeForPlSqlIdentifier(table.TableName);
                 sb.AppendLine($"  -- Populating data for table: {table.TableName}");
@@ -522,8 +708,7 @@ PROCEDURE AR_Recapture_w_CR IS
 
                     if (columnDataTypeUpper == null)
                     {
-                        // generatedValue remains "NULL"
-                        System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Null data type for column {column.ColumnName} in table {table.TableName}. Using NULL.");
+                        Logger.LogInfo($"GeneratePlSqlDataPopulationLogic: Null data type for column {column.ColumnName} in table {table.TableName}. Using NULL.");
                     }
                     else if (columnDataTypeUpper.StartsWith("VARCHAR2") || columnDataTypeUpper.StartsWith("VARCHAR") || columnDataTypeUpper.StartsWith("CHAR") || columnDataTypeUpper.StartsWith("NVARCHAR2"))
                     {
@@ -539,58 +724,39 @@ PROCEDURE AR_Recapture_w_CR IS
                                     string lenStr = column.DataType.Substring(startIndex, endIndex - startIndex);
                                     if (int.TryParse(lenStr, out int parsedLength))
                                     {
-                                        declaredLength = Math.Max(1, Math.Min(parsedLength, 4000)); // Clamp to reasonable Oracle limits
+                                        declaredLength = Math.Max(1, Math.Min(parsedLength, 4000));
                                     }
                                 }
                             }
                             catch { /* Use default if parsing fails */ }
                         }
-
-                        // CS0122 Fix: Use maxILength for C# calculations regarding the PL/SQL 'i' variable's string representation.
                         int maxILength = rowCount.ToString().Length;
                         string prefixForCalc = "Val_";
-                        string suffixTemplateForCalc = "_"; // Represents the underscore before 'i' in generated PL/SQL
-
-                        // Calculate length needed for prefix, the underscore, and the max possible length of 'i' as a string.
+                        string suffixTemplateForCalc = "_";
                         int fixedPartsLength = prefixForCalc.Length + suffixTemplateForCalc.Length + maxILength;
-                        int availableLength = declaredLength - fixedPartsLength - 2; // -2 for the quotes ''
+                        int availableLength = declaredLength - fixedPartsLength - 2;
 
                         if (availableLength >= 1)
                         {
-                            int randomPartLength = Math.Min(availableLength, 20); // Max 20 chars for random part
-                            // Generated PL/SQL will use the actual PL/SQL loop variable 'i'
+                            int randomPartLength = Math.Min(availableLength, 20);
                             generatedValue = $"'{prefixForCalc}' || DBMS_RANDOM.STRING('A', {randomPartLength}) || '{suffixTemplateForCalc}' || i";
                         }
                         else
                         {
-                            // Fallback: Try to generate 'Err_' || i, ensuring it fits.
                             string errPrefixForCalc = "Err_";
                             fixedPartsLength = errPrefixForCalc.Length + maxILength;
-                            availableLength = declaredLength - fixedPartsLength - 2; // -2 for quotes
-
-                            if (availableLength >= 0) // Need at least 0 for the errPrefix to concatenate with i
+                            availableLength = declaredLength - fixedPartsLength - 2;
+                            if (availableLength >= 0)
                             {
-                                // Ensure the 'Err_' and 'i' concatenation doesn't exceed declaredLength.
-                                // This is tricky because 'i' in PL/SQL varies. The check is against maxILength.
-                                // A simpler robust fallback is to use a very short string or i truncated if possible.
-                                generatedValue = $"'E_' || TO_CHAR(i)"; // Example: E_1, E_100
-                                // Check if this simple fallback itself is too long
-                                // Max length of 'E_' || i is 'E_'.Length + maxILength
+                                generatedValue = $"'E_' || TO_CHAR(i)";
                                 if (("E_".Length + maxILength + 2) > declaredLength)
                                 {
-                                    if (declaredLength >= 2) generatedValue = "''"; // Empty string if 'E_i' is too long
-                                    else generatedValue = "NULL"; // If even '' is too long
+                                    if (declaredLength >= 2) generatedValue = "''"; else generatedValue = "NULL";
                                 }
                             }
-                            else if (declaredLength >= 2)
-                            {
-                                generatedValue = "''"; // Empty Oracle string if nothing else fits
-                            }
-                            else
-                            {
-                                generatedValue = "NULL"; // Cannot fit even ''
-                            }
-                            System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: VARCHAR2 column {column.ColumnName} in table {table.TableName} has declared length {declaredLength} too small for full pattern 'Val_RANDOM_i'. Using fallback: {generatedValue}");
+                            else if (declaredLength >= 2) { generatedValue = "''"; }
+                            else { generatedValue = "NULL"; }
+                            Logger.LogInfo($"GeneratePlSqlDataPopulationLogic: VARCHAR2 column {column.ColumnName} in table {table.TableName} has declared length {declaredLength} too small. Using fallback: {generatedValue}");
                         }
                     }
                     else if (columnDataTypeUpper.StartsWith("NUMBER") || columnDataTypeUpper.StartsWith("INTEGER") || columnDataTypeUpper.StartsWith("INT") || columnDataTypeUpper.StartsWith("DECIMAL") || columnDataTypeUpper.StartsWith("FLOAT"))
@@ -599,36 +765,37 @@ PROCEDURE AR_Recapture_w_CR IS
                     }
                     else if (columnDataTypeUpper.StartsWith("DATE"))
                     {
-                        generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + MOD(i-1, 365*50)"; // spread over 50 years
+                        generatedValue = $"TO_DATE('2000-01-01', 'YYYY-MM-DD') + MOD(i-1, 365*50)";
                     }
                     else
                     {
-                        // generatedValue remains "NULL"
-                        System.Diagnostics.Debug.WriteLine($"GenerateInsertStatements: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
+                        Logger.LogInfo($"GeneratePlSqlDataPopulationLogic: Unsupported data type {column.DataType} for column {column.ColumnName} in table {table.TableName}. Using NULL.");
                     }
-
                     sb.AppendLine($"    V_Fake_{sanitizedTableName}_Data(i).\"{column.ColumnName}\" := {generatedValue};");
                 }
                 sb.AppendLine("  END LOOP;");
                 sb.AppendLine();
             }
+            return sb.ToString();
+        }
 
+        private string GeneratePlSqlInsertAllLoop(List<TableSchema> tableSchemas)
+        {
+            StringBuilder sb = new StringBuilder();
             // After populating all collections, do the inserts
             foreach (TableSchema table in tableSchemas)
             {
                 if (table.Columns == null || table.Columns.Count == 0 || string.IsNullOrWhiteSpace(table.TableName))
                 {
-                    continue; // Skip if no columns
+                    Logger.LogInfo($"GeneratePlSqlInsertAllLoop: Skipping table {(table.TableName ?? "[NULL TABLE NAME]")} due to no columns or invalid name.");
+                    continue;
                 }
                 string sanitizedTableName = SanitizeForPlSqlIdentifier(table.TableName);
                 sb.AppendLine($"  -- Inserting data into table: {table.TableName}");
                 sb.AppendLine($"  FORALL i IN V_Fake_{sanitizedTableName}_Data.FIRST..V_Fake_{sanitizedTableName}_Data.LAST");
-                // Table name in INSERT INTO should not be quoted if it's schema-qualified
                 sb.AppendLine($"    INSERT INTO {table.TableName} VALUES V_Fake_{sanitizedTableName}_Data(i);");
                 sb.AppendLine();
             }
-
-            sb.AppendLine("END;");
             return sb.ToString();
         }
     }

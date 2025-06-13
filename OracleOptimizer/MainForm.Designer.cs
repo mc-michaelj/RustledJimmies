@@ -265,7 +265,26 @@ namespace OracleOptimizer
             geminiModelTextBox.Name = "geminiModelTextBox";
             geminiModelTextBox.Size = new Size(400, 23);
             geminiModelTextBox.TabIndex = 13;
-            geminiModelTextBox.Text = "gemini-2.5-flash-preview-05-20";
+            geminiModelTextBox.Text = "gemini-1.5-flash-latest"; // Updated default model
+            //
+            // testRowCountLabel
+            //
+            testRowCountLabel.AutoSize = true;
+            testRowCountLabel.Location = new Point(526, 75); // Aligned with Gemini Model, but further right
+            testRowCountLabel.Name = "testRowCountLabel";
+            testRowCountLabel.Size = new Size(96, 15);
+            testRowCountLabel.TabIndex = 14;
+            testRowCountLabel.Text = "Test Row Count:";
+            //
+            // testRowCountNumericUpDown
+            //
+            testRowCountNumericUpDown.Location = new Point(628, 72); // Next to its label
+            testRowCountNumericUpDown.Name = "testRowCountNumericUpDown";
+            testRowCountNumericUpDown.Size = new Size(114, 23); // Standard size for numeric up down
+            testRowCountNumericUpDown.TabIndex = 15;
+            testRowCountNumericUpDown.Minimum = 1;
+            testRowCountNumericUpDown.Maximum = 100000;
+            testRowCountNumericUpDown.Value = 1000;
             // 
             // warningLabel
             // 
@@ -288,6 +307,8 @@ namespace OracleOptimizer
             Controls.Add(geminiApiKeyLabel);
             Controls.Add(geminiModelTextBox);
             Controls.Add(geminiModelLabel);
+            Controls.Add(testRowCountLabel);
+            Controls.Add(testRowCountNumericUpDown);
             Controls.Add(statusStrip);
             Controls.Add(resultsTabControl);
             Controls.Add(analyzeButton);
@@ -339,5 +360,7 @@ namespace OracleOptimizer
         private Label geminiModelLabel;
         private TextBox geminiModelTextBox;
         private Label warningLabel;
+        private Label testRowCountLabel;
+        private NumericUpDown testRowCountNumericUpDown;
     }
 }
