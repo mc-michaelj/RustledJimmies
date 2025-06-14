@@ -82,7 +82,7 @@ Your Response MUST be a JSON object with the following exact structure and keys:
     ""optimized_procedure_body"": ""The full, optimized PL/SQL code"",
     ""validation_query_after"": ""SELECT statement to get the data state after the logic runs"",
     ""explanation"": ""A detailed explanation of the optimizations and validation plan""
-}";
+} Your response MUST begin with ```json and end with ``` and contain nothing outside of the JSON block.";
             // Construct the request body with the user's procedure.
             var requestBody = new
             {
@@ -127,41 +127,32 @@ Your Response MUST be a JSON object with the following exact structure and keys:
                 throw new Exception("Gemini returned an empty or invalid response body.");
             }
 
-            // The AI might wrap the JSON in markdown (```json ... ```) or include conversational text.
-            // This section attempts to extract the clean JSON block.
-            string jsonBlock = modelResponseText;
-            string jsonMarker = "```json";
-            int startIndex = modelResponseText.IndexOf(jsonMarker);
+            const string jsonMarkerStart = "```json";
+            const string jsonMarkerEnd = "```";
+            string jsonBlock;
 
-            if (startIndex != -1) // If the ```json marker is found
+            int startIndex = modelResponseText.IndexOf(jsonMarkerStart);
+            if (startIndex != -1)
             {
-                startIndex += jsonMarker.Length; // Move past the marker
-                int endIndex = modelResponseText.LastIndexOf("```"); // Find the closing markdown marker
+                startIndex += jsonMarkerStart.Length; // Move past the marker itself
+                // Find the closing marker *after* the start marker.
+                // Using LastIndexOf as per issue example, but ensuring endIndex > startIndex.
+                int endIndex = modelResponseText.LastIndexOf(jsonMarkerEnd);
+
                 if (endIndex > startIndex)
                 {
                     jsonBlock = modelResponseText.Substring(startIndex, endIndex - startIndex).Trim();
                 }
-                // If no closing ``` is found, it might be an incomplete response or the JSON is the rest of the string.
-                // For simplicity, we might assume the rest of the string is the JSON, or handle error.
-                // Current logic implicitly uses the rest of the string if endIndex is not found or not after startIndex.
+                else
+                {
+                    // End marker not found after start marker or in the wrong order
+                    throw new Exception($"Gemini response started with '{jsonMarkerStart}' but no closing '{jsonMarkerEnd}' was found, or it appeared before the start marker. Response: {modelResponseText}");
+                }
             }
             else
             {
-                // Fallback strategy: If no markdown block is explicitly found,
-                // try to find the first opening curly brace '{' and the last closing curly brace '}'.
-                // This assumes the main JSON content is the first complete JSON object in the response.
-                int firstBrace = modelResponseText.IndexOf('{');
-                int lastBrace = modelResponseText.LastIndexOf('}');
-
-                if (firstBrace != -1 && lastBrace > firstBrace)
-                {
-                    jsonBlock = modelResponseText.Substring(firstBrace, lastBrace - firstBrace + 1);
-                }
-                else
-                {
-                    // If no clear JSON object is found by braces either, the response is considered invalid.
-                    throw new Exception("Could not find a valid JSON object in the Gemini response.");
-                }
+                // Start marker not found
+                throw new Exception($"Could not find the expected '{jsonMarkerStart}' marker in the Gemini response. Response: {modelResponseText}");
             }
 
             // Attempt to deserialize the extracted JSON block into the GeminiResponse object.

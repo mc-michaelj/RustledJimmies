@@ -8,6 +8,10 @@ namespace OracleOptimizer.Services
     /// </summary>
     public static class DataTableComparator
     {
+        private const double EpsilonDouble = 1E-9;
+        private const float EpsilonFloat = 1E-7f;
+        private const decimal EpsilonDecimal = 1E-9m; // Or a smaller value like 1E-18m for higher precision
+
         /// <summary>
         /// Compares two DataTable objects to determine if they are identical in structure and data.
         /// Checks for differences in row counts, column counts, column names, and cell values.
@@ -70,11 +74,26 @@ namespace OracleOptimizer.Services
                 {
                     object val1 = dt1.Rows[i][j];
                     object val2 = dt2.Rows[i][j];
+                    bool areCellValuesEqual;
 
-                    // Note: In DataTableComparator.cs, add a comment to address potential precision issues
-                    // when comparing FLOAT or DOUBLE PRECISION Oracle types (mapping to C# float/double).
-                    // Suggest the need for epsilon comparison if such types are common and require precise comparison.
-                    if (!Equals(val1, val2))
+                    if (val1 is double d1 && val2 is double d2)
+                    {
+                        areCellValuesEqual = Math.Abs(d1 - d2) < EpsilonDouble;
+                    }
+                    else if (val1 is float f1 && val2 is float f2)
+                    {
+                        areCellValuesEqual = Math.Abs(f1 - f2) < EpsilonFloat;
+                    }
+                    else if (val1 is decimal dec1 && val2 is decimal dec2)
+                    {
+                        areCellValuesEqual = Math.Abs(dec1 - dec2) < EpsilonDecimal;
+                    }
+                    else
+                    {
+                        areCellValuesEqual = Equals(val1, val2);
+                    }
+
+                    if (!areCellValuesEqual)
                     {
                         sb.AppendLine($"Data mismatch at Row {i}, Column '{dt1.Columns[j].ColumnName}': Before='{val1}', After='{val2}'");
                         identical = false;

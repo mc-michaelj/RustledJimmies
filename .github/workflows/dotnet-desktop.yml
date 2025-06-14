@@ -34,14 +34,27 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Step 2: Set up .NET SDK
+    # Step 2: Cache NuGet packages
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', '**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    # Step 3: Set up .NET SDK
     # This ensures the correct version of the .NET SDK is available.
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
 
-    # Step 3: Publish the application as a single, self-contained file
+    # Step 4: Check formatting (Optional, but good practice)
+    - name: Check formatting
+      run: dotnet format --verify-no-changes --verbosity diagnostic
+
+    # Step 5: Publish the application as a single, self-contained file
     - name: Publish application
       # This single `dotnet publish` command handles restoring dependencies, building, and packaging.
       # It's the modern, recommended way to build for deployment.
@@ -58,7 +71,7 @@ jobs:
         /p:PublishSingleFile=true
         /p:IncludeAllContentForSelfExtract=true
 
-    # Step 4: Create a GitHub Release and upload the single .exe file
+    # Step 6: Create a GitHub Release and upload the single .exe file
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
